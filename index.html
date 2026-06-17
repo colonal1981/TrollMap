@@ -4323,39 +4323,51 @@ async function buildPlanPreviewHtml(p){
     if(lakeEntry && lakeEntry.usgs){
       try {
         const {site, params} = lakeEntry.usgs;
-        const usgsUrl = `https://waterservices.usgs.gov/nwis/iv/?sites=${site}&parameterCd=${params}&format=json&period=P2D`;
+        const usgsUrl = `https://api.waterdata.usgs.gov/ogcapi/v0/collections/latest-continuous/items?monitoring_location_id=USGS-${site}&parameter_code=00065,00010&f=json`;
         const uController = new AbortController();
-        const uTimeoutId = setTimeout(() => uController.abort(), 4000);
+        const uTimeoutId = setTimeout(() => uController.abort(), 6000);
         const ur = await fetch(usgsUrl, { signal: uController.signal });
         clearTimeout(uTimeoutId);
         const ud = await ur.json();
-        if(ud && ud.value && ud.value.timeSeries){
+
+        // New USGS API: FeatureCollection with features[].properties
+        if(ud?.features?.length){
+          const stageFeat = ud.features.find(f=>f.properties?.parameter_code==='00065');
+          const tempFeat  = ud.features.find(f=>f.properties?.parameter_code==='00010');
+          let parts = [];
+          if(tempFeat){
+            const tempC = parseFloat(tempFeat.properties.value);
+            const tempF = Math.round(tempC * 9/5 + 32);
+            if(!isNaN(tempF)){
+              parts.push(`Water temp: <b>${tempF}°F</b> (${tempC.toFixed(1)}°C)`);
+              if(!p.meta.waterTemp) p.meta.waterTemp = String(tempF);
+            }
+          }
+          if(stageFeat){
+            const stageNow = parseFloat(stageFeat.properties.value);
+            if(!isNaN(stageNow)){
+              parts.push(`Gauge: <b>${stageNow.toFixed(2)} ft</b>`);
+            }
+          }
+          if(parts.length){
+            usgsHtml = `<div class="rp-callout rp-info"><b>💧 USGS Live Water Data (site ${site})</b><br>${parts.join(' · ')}<br><span class="rp-small">Data provisional — subject to USGS revision.</span></div>`;
+          }
+        }
+        // Legacy API fallback (waterservices.usgs.gov — still works until 2027)
+        else if(ud?.value?.timeSeries){
           const series = ud.value.timeSeries;
           const tempSeries  = series.find(s=>s.variable.variableCode[0].value==='00010');
           const stageSeries = series.find(s=>s.variable.variableCode[0].value==='00065');
           let parts = [];
           if(tempSeries){
-            const vals = tempSeries.values[0].value;
-            const latest = vals[vals.length-1];
-            const tempC = parseFloat(latest.value);
-            const tempF = Math.round(tempC * 9/5 + 32);
-            parts.push(`Water temp: <b>${tempF}°F</b> (${tempC.toFixed(1)}°C)`);
-            // Auto-fill water temp field if empty
-            if(!p.meta.waterTemp) p.meta.waterTemp = String(tempF);
+            const vals = tempSeries.values[0].value.filter(v=>v.value!=='-999999');
+            if(vals.length){ const tempC=parseFloat(vals[vals.length-1].value); const tempF=Math.round(tempC*9/5+32); parts.push(`Water temp: <b>${tempF}°F</b>`); if(!p.meta.waterTemp) p.meta.waterTemp=String(tempF); }
           }
           if(stageSeries){
-            const vals = stageSeries.values[0].value;
-            const latest = vals[vals.length-1];
-            const prev   = vals[Math.max(0, vals.length-13)]; // ~3hr ago
-            const stageNow  = parseFloat(latest.value);
-            const stagePrev = parseFloat(prev.value);
-            const diff = stageNow - stagePrev;
-            const trend = diff > 0.05 ? '📈 Rising' : diff < -0.05 ? '📉 Falling' : '➡ Stable';
-            parts.push(`Gauge: <b>${stageNow.toFixed(2)} ft</b> ${trend} (${diff>=0?'+':''}${diff.toFixed(2)} ft / 3hr)`);
+            const vals = stageSeries.values[0].value.filter(v=>v.value!=='-999999');
+            if(vals.length){ parts.push(`Gauge: <b>${parseFloat(vals[vals.length-1].value).toFixed(2)} ft</b>`); }
           }
-          if(parts.length){
-            usgsHtml = `<div class="rp-callout rp-info"><b>💧 USGS Live Water Data (site ${site})</b><br>${parts.join(' · ')}<br><span class="rp-small">Data provisional — subject to USGS revision. Duke Energy app may differ for managed lakes.</span></div>`;
-          }
+          if(parts.length) usgsHtml = `<div class="rp-callout rp-info"><b>💧 USGS Live Water Data (site ${site})</b><br>${parts.join(' · ')}</div>`;
         }
       } catch(e){ usgsHtml = ''; /* USGS optional, fail silently */ }
     }
@@ -6126,28 +6138,35 @@ setTimeout(() => {
         let poolResult = NaN;
         let tempResult = NaN;
 
-        // 1. If USGS monitoring station ID exists, execute direct wide-open local pull
+        // 1. USGS fetch — try new API first, fall back to legacy
         const usgsTargetId = feed?.usgsId || lkEntry?.usgs?.site;
         if(usgsTargetId){
-          const usgsUrl = `https://waterservices.usgs.gov/nwis/iv/?sites=${usgsTargetId}&parameterCd=00065,00010&format=json&period=P2D`;
+          const newUsgsUrl = `https://api.waterdata.usgs.gov/ogcapi/v0/collections/latest-continuous/items?monitoring_location_id=USGS-${usgsTargetId}&parameter_code=00065,00010&f=json`;
           const ctrl = new AbortController();
           const timer = setTimeout(() => ctrl.abort(), 8000);
           try {
-            const res = await fetch(usgsUrl, { signal: ctrl.signal });
+            const res = await fetch(newUsgsUrl, { signal: ctrl.signal });
             clearTimeout(timer);
             const data = await res.json();
 
-            if(data?.value?.timeSeries){
+            if(data?.features?.length){
+              // New API format
+              const stageFeat = data.features.find(f=>f.properties?.parameter_code==='00065');
+              const tempFeat  = data.features.find(f=>f.properties?.parameter_code==='00010');
+              if(stageFeat) poolResult = parseFloat(stageFeat.properties.value);
+              if(tempFeat)  tempResult = Math.round(parseFloat(tempFeat.properties.value)*9/5+32);
+            } else if(data?.value?.timeSeries){
+              // Legacy API fallback
               const series = data.value.timeSeries;
-              const stg = series.find(s => s.variable.variableCode[0].value === '00065');
+              const stg = series.find(s=>s.variable.variableCode[0].value==='00065');
               if(stg?.values?.[0]?.values?.length){
-                const vals = stg.values[0].values.filter(v => v.value !== '-999999' && v.value !== 'Ice');
+                const vals = stg.values[0].values.filter(v=>v.value!=='-999999');
                 if(vals.length) poolResult = parseFloat(vals[vals.length-1].value);
               }
-              const tmp = series.find(s => s.variable.variableCode[0].value === '00010');
+              const tmp = series.find(s=>s.variable.variableCode[0].value==='00010');
               if(tmp?.values?.[0]?.values?.length){
-                const vals = tmp.values[0].values.filter(v => v.value !== '-999999');
-                if(vals.length) tempResult = Math.round(parseFloat(vals[vals.length-1].value) * 9/5 + 32);
+                const vals = tmp.values[0].values.filter(v=>v.value!=='-999999');
+                if(vals.length) tempResult = Math.round(parseFloat(vals[vals.length-1].value)*9/5+32);
               }
             }
           } catch(usgsErr){
