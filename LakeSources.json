@@ -1,0 +1,45 @@
+{
+  "title": "Authoritative Tristate Master GIS Water Database & Contours Source Intel",
+  "version": "9.0.0",
+  "compileDate": "2026-06-17",
+  "coverage": {
+    "states": ["SC", "NC", "GA"],
+    "totalLakesAndSounds": 150,
+    "concreteLaunchRamps": 1283,
+    "bankAndPierFishingCorridors": 1343,
+    "paddleAndKayakSlides": 773,
+    "submergedFishAttractors": 3532
+  },
+  "authoritativeAgencies": [
+    {
+      "agency": "South Carolina Department of Natural Resources (SCDNR)",
+      "portalUrl": "https://data-scdnr.opendata.arcgis.com/",
+      "datasets": ["Fish Attractors", "Boat Ramps", "Public Fishing Areas", "Bathymetric Shapefiles", "State County Frames"]
+    },
+    {
+      "agency": "North Carolina Wildlife Resources Commission (NCWRC)",
+      "portalUrl": "https://www.ncwildlife.org/Boating/Where-to-Boat",
+      "datasets": ["Boating Access Areas", "Public Fishing Access", "Coastal Sounds Integration"]
+    },
+    {
+      "agency": "Georgia Department of Natural Resources (GA DNR)",
+      "portalUrl": "https://georgiawildlife.com/",
+      "datasets": ["Georgia Public Fishing Areas (PFAs)", "Boat Ramps", "Submerged Submerged Trees"]
+    },
+    {
+      "agency": "United States Geological Survey (USGS)",
+      "portalUrl": "https://waterdata.usgs.gov/",
+      "datasets": ["National Water Information System (NWIS)", "Live Telemetry Relays (Parameters 00065, 00010)"]
+    },
+    {
+      "agency": "NOAA Center for Operational Oceanographic Products and Services (CO-OPS)",
+      "portalUrl": "https://tidesandcurrents.noaa.gov/",
+      "datasets": ["Coastal Water Level Harmonic Predictions", "Mean Lower Low Water (MLLW) Tidal Baselines"]
+    }
+  ],
+  "localMapServers": {
+    "iBoatingWMTS": "http://localhost:8080/wmts/marine/marine_charts/{z}/{x}/{y}.png",
+    "openMeteoForecast": "https://api.open-meteo.com/v1/forecast"
+  },
+  "note": "TrollMap Personal Master Edition operates 100% locally in browser memory. Spatial dictionaries and telemetry proxies are liberated from commercial paywalls forever."
+}
