@@ -1,7 +1,7 @@
 # 🎣 TrollMap GPX Studio — Carolinas Master Edition v10
 
 **Elite Web-Based Precision Trolling Route Planner, Quickdraw Studio, Live Trip
-Briefing Generator, and Real-Time River Safety Dashboard.**
+Briefing Generator, and Plan-Integrated Real-Time River Safety Dashboard.**
 
 Hosted on GitHub Pages: <https://colonal1981.github.io/TrollMap/>
 
@@ -26,10 +26,8 @@ Fixed:
 - **Sample (Lake Wateree)**: returns elevation `220.76 ft AMSL`, `97.9 %` of
   full pool, water temp `77 °F`, plus the live Duke drought-stage advisory text.
 
-### 2. New 🌊 Rivers tab
-A whole new bottom-nav tab for the six rivers within range of the user
-(Wateree, Congaree, Cooper system, Santee, Broad, Lower Saluda). Each river
-shows:
+### 2. Rivers merged into the 🎣 Plan tab
+The standalone 🌊 Rivers bottom-nav tab was removed. River selections now live in the same Plan tab waterbody dropdown as lakes, grouped under **Lakes / Reservoirs** and **Rivers / Tailwaters**. Pick a river (Wateree, Congaree, Cooper system, Santee, Broad, Lower Saluda) and the Plan tab swaps from lake pool fields to river-specific fields showing:
 
 - **Live USGS streamflow, gauge height, and water temperature** with automatic
   JSON→RDB fallback for the periods USGS's JSON endpoint returns empty data.
@@ -128,7 +126,7 @@ colonal1981.github.io/TrollMap/
 2. **GitHub Pages** picks it up automatically in ~60 seconds.
 3. Live app: <https://colonal1981.github.io/TrollMap/>
 
-That's it. v10 is single-file: everything (Rivers tab, fishing-index overlay,
+That's it. v10 is single-file: everything (Plan-tab river integration, fishing-index overlay,
 all the styles and JavaScript) is inlined in `index.html` so the deploy is
 exactly what you've been doing every other time.
 
