@@ -7329,6 +7329,935 @@ if ('serviceWorker' in navigator) {
 
 </script>
 <script defer src="https://static.cloudflareinsights.com/beacon.min.js/v833ccba57c9e4d2798f2e76cebdd09a11778172276447" integrity="sha512-57MDmcccJXYtNnH+ZiBwzC4jb2rvgVCEokYN+L/nLlmO8rfYT/gIpW2A569iJ/3b+0UEasghjuZH/ma3wIs/EQ==" data-cf-beacon='{"version":"2024.11.0","token":"1954b47c125f43f8b4338b3c4f804e4f","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
-<script defer src="https://static.cloudflareinsights.com/beacon.min.js/v833ccba57c9e4d2798f2e76cebdd09a11778172276447" integrity="sha512-57MDmcccJXYtNnH+ZiBwzC4jb2rvgVCEokYN+L/nLlmO8rfYT/gIpW2A569iJ/3b+0UEasghjuZH/ma3wIs/EQ==" data-cf-beacon='{"version":"2024.11.0","token":"1954b47c125f43f8b4338b3c4f804e4f","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
-</body>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     v10 ADDITIONS — merged from external modules (2026-06-18)
+     - Fishing-Index overlay: fixes SCDNR data quirks (William Dennis / Cooper system)
+     - Rivers tab: live USGS + Duke flow-arrivals + location-aware kayak surge ETA
+     ═══════════════════════════════════════════════════════════════════════════ -->
+<script>
+  // Expose two host-page constants to the embedded modules:
+  //   TRISTATE_MASTER_RAMPS  → the SCDNR ramp database (declared near line 1163)
+  //   CF_WORKER_URL          → the Cloudflare worker URL (declared near line 5491)
+  // Top-level `const` in a <script> tag is NOT automatically on `window`, so
+  // we lift them manually here.
+  if (typeof TRISTATE_MASTER_RAMPS !== 'undefined') window.TRISTATE_MASTER_RAMPS = TRISTATE_MASTER_RAMPS;
+  if (typeof CF_WORKER_URL          !== 'undefined') window.CF_WORKER_URL          = CF_WORKER_URL;
+</script>
+
+<!-- ─── Fishing-Index overlay (non-destructive fixes to SCDNR data) ─── -->
+<script>
+/**
+ * trollmap_fishing_index.js — Fisherman-friendly overlay on top of SCDNR data
+ *
+ * The SCDNR LAUNCHES blob in index.html is biologically/hydrologically accurate
+ * (e.g., William Dennis Landing is filed under "Tail Race Canal" because that's
+ * what the water-body officially is) but that organization makes ramps hard to
+ * find from a fisherman's perspective ("I want to fish the Cooper" → would never
+ * think to look under "Tail Race Canal").
+ *
+ * This module is a NON-DESTRUCTIVE overlay. It doesn't modify the SCDNR data
+ * at all — it just provides:
+ *   1. FISHING_SYSTEMS — fisherman-named groups that pull ramps from MANY SCDNR keys
+ *   2. SCDNR_OVERRIDES — corrections for the few entries that are actively wrong
+ *   3. window.getFishingRamps(systemName) — returns the merged ramp list
+ *
+ * Scoped to waterbodies within ~2.5-3 hr drive of Sumter, SC (where the user
+ * lives). NC waterbodies (ALL-CAPS keys in SCDNR data) are not currently
+ * remapped because they're outside the target use range and the casing
+ * convention actually disambiguates them correctly from SC entries with the
+ * same name.
+ *
+ * Add to index.html with:   <script src="trollmap_fishing_index.js"><\/script>
+ * Load BEFORE any code that wants to use window.getFishingRamps().
+ */
+(function () {
+  'use strict';
+
+  /* ─────────────────────────────────────────────────────────────────
+   * 1. FISHING SYSTEMS — fisherman's grouping of SCDNR waterbody keys
+   *    Each system pulls ramps from multiple SCDNR keys and merges them.
+   *    Geographic ordering hints (when relevant) help dropdowns make sense.
+   * ───────────────────────────────────────────────────────────────── */
+  const FISHING_SYSTEMS = {
+
+    // ═══ Cooper River system (Pinopolis tailrace → Charleston Harbor) ═══
+    // SCDNR splits this into 5+ separate waterbody keys because each is
+    // technically a distinct hydrological feature. From the angler's POV
+    // it's all "the Cooper" — including the tailrace where you fish shad.
+    "Cooper River system (Pinopolis tailrace → Charleston Harbor)": {
+      scdnrKeys: [
+        "Tail Race Canal",          // William Dennis (your shad spot)
+        "Wadboo Creek",             // Rembert C Dennis
+        "Goose Creek",              // John R Bettis
+        "Back River",               // Bushy Park Fresh
+        "Cooper River",             // proper river — Bushy Park Salt, Huger, Hendricks
+      ],
+      // Optional human-readable annotation for each ramp by SCDNR key
+      annotations: {
+        "Tail Race Canal":     "Pinopolis tailrace (great shad in season)",
+        "Wadboo Creek":        "Cooper tributary",
+        "Goose Creek":         "Cooper tributary",
+        "Back River":          "Parallel waterway, Bushy Park area",
+        "Cooper River":        "Main Cooper",
+      },
+      // Specific per-ramp notes (overlaid on the SCDNR ramp name)
+      rampNotes: {
+        "William Dennis": "⚠ Temporarily closed for renovations 2026; reopening pending.",
+      },
+      defaultMapCenter: [33.10, -79.92, 11],
+    },
+
+    // ═══ Lake Marion (incl. upper-pool sub-pools) ═══
+    // Pool D / Pool L / Mays Lake are biological sub-areas of upper Marion.
+    "Lake Marion (full lake)": {
+      scdnrKeys: [
+        "Lake Marion",
+        "Pool D",
+        "Pool L",
+        "Mays Lake",
+      ],
+      annotations: {
+        "Lake Marion": "Main lake",
+        "Pool D":      "Upper Marion sub-pool",
+        "Pool L":      "Upper Marion sub-pool",
+        "Mays Lake":   "Upper Marion sub-pool",
+      },
+      defaultMapCenter: [33.55, -80.30, 11],
+    },
+
+    // ═══ Lake Monticello (incl. subimpoundment) ═══
+    "Lake Monticello (full)": {
+      scdnrKeys: [
+        "Lake Monticello",
+        "Monticello Recreation Lake",
+      ],
+      annotations: {
+        "Lake Monticello":             "Main lake",
+        "Monticello Recreation Lake":  "Recreation subimpoundment",
+      },
+      defaultMapCenter: [34.35, -81.30, 12],
+    },
+
+    // ═══ Murrells Inlet / ICW (overlapping water) ═══
+    "Murrells Inlet / ICW": {
+      scdnrKeys: [
+        "Murrells Inlet",
+        "Intracoastal Waterway",   // ICW passes right through Murrells
+      ],
+      annotations: {
+        "Murrells Inlet":          "Inlet proper",
+        "Intracoastal Waterway":   "ICW segment",
+      },
+      defaultMapCenter: [33.55, -79.05, 12],
+    },
+
+    // ═══ Charleston Harbor tidal creek complex ═══
+    // A bunch of small creeks all flow into Charleston Harbor. Filed as
+    // separate SCDNR keys; from a fisherman's perspective they're "the
+    // Charleston inshore" you might pick from in one place.
+    "Charleston Harbor tidal creeks": {
+      scdnrKeys: [
+        "Ashley River",
+        "Wando River",
+        "Stono River",
+        "Folly River",
+        "Wappoo Creek",
+        "Elliot Cut",
+        "Shem Creek",
+        "Rantowles Creek",
+      ],
+      defaultMapCenter: [32.78, -79.95, 11],
+    },
+  };
+
+  /* ─────────────────────────────────────────────────────────────────
+   * 2. SCDNR_OVERRIDES — corrections for entries that are actively wrong
+   *    Only used when an SCDNR entry has a real bug (name collision or
+   *    coordinate error). DOES NOT modify the original data, just provides
+   *    a sanitized view via getCorrectedRamps().
+   * ───────────────────────────────────────────────────────────────── */
+  const SCDNR_OVERRIDES = {
+
+    // "Broad River" contains 2 entries that aren't on the inland Broad above
+    // Columbia: one is the coastal Broad near Beaufort, one is in Georgia.
+    "Broad River": {
+      excludeRampNames: [
+        "Broad River",           // [32.39, -80.78] = coastal Broad near Beaufort, DIFFERENT RIVER
+        "Broad River (SR17)",    // [33.97, -82.77] = GA river entirely
+      ],
+      note: "Entries excluded: coastal Broad near Beaufort and a GA river that share the name. Use the dedicated 'Broad River (Beaufort coastal)' system if you need that one.",
+    },
+
+    // "Lake Russell" contains 3 different lakes named Russell:
+    //   (a) the big Russell on the Savannah River (14 ramps at ~34.1°N)
+    //   (b) "Lake Russell" near Cornelia GA (different lake entirely)
+    //   (c) "Paradise PFA - Lake Russell" in south GA
+    "Lake Russell": {
+      excludeRampNames: [
+        "Lake Russell",                  // [34.49, -83.49] — DIFFERENT Lake Russell in GA
+        "Paradise PFA - Lake Russell",   // [31.39, -83.36] — DIFFERENT lake in south GA
+      ],
+      note: "Two entries excluded: a different Lake Russell in north GA and a Paradise PFA Lake Russell in south GA. The 14 remaining ramps are the actual Lake Russell on the Savannah River.",
+    },
+
+    // "Lake Robinson" — two distinct lakes:
+    //   (a) J. Verne Smith Park at [34.99, -82.29] — Greenville County
+    //   (b) "Lake Robinson" at [34.47, -80.16] — Darlington County
+    // These really are two different SC lakes. We split them.
+    "Lake Robinson": {
+      // Both are legit but at very different locations — annotate by ramp
+      rampNotes: {
+        "J. Verne Smith Park": "Greenville County Lake Robinson",
+        "Lake Robinson":       "Darlington County Lake Robinson",
+      },
+      note: "Two different SC lakes both named Lake Robinson. Annotations distinguish them.",
+    },
+  };
+
+  /* ─────────────────────────────────────────────────────────────────
+   * 3. Public API
+   * ───────────────────────────────────────────────────────────────── */
+
+  // Pull the SCDNR LAUNCHES blob from the host page's globals.
+  // In your index.html the actual variable is `TRISTATE_MASTER_RAMPS` (a
+  // top-level const at line 1163). Top-level `const` in a <script> tag is
+  // NOT automatically attached to `window` (unlike `var`), so we look in
+  // a few places and degrade gracefully if it's not exposed.
+  function getScdnrLaunches() {
+    if (typeof window === 'undefined') return null;
+    // Most likely globals (in priority order):
+    return window.TRISTATE_MASTER_RAMPS    // your actual variable name
+        || window.LAUNCHES_DB
+        || window.LAUNCHES
+        || window.SC_LAUNCHES
+        || (typeof TRISTATE_MASTER_RAMPS !== 'undefined' ? TRISTATE_MASTER_RAMPS : null)
+        || null;
+  }
+
+  // Flatten SCDNR's two-level structure: { state: { waterbody: { ramp: [lat,lon] } } }
+  // into one big map keyed by waterbody name → [{name, lat, lon}, ...]
+  function flattenLaunches(launches) {
+    const out = {};
+    if (!launches) return out;
+    // Could be either {state: {wb: {ramp}}} or {wb: {ramp}} — handle both
+    for (const k of Object.keys(launches)) {
+      const v = launches[k];
+      if (v && typeof v === 'object' && !Array.isArray(v)) {
+        // Is this a state container or a waterbody?
+        const firstVal = Object.values(v)[0];
+        if (firstVal && typeof firstVal === 'object' && !Array.isArray(firstVal)
+            && !Array.isArray(Object.values(firstVal)[0])) {
+          // Two-level: state → waterbody
+          for (const [wbName, ramps] of Object.entries(v)) {
+            mergeWaterbody(out, wbName, ramps);
+          }
+        } else {
+          // One-level: waterbody → ramps
+          mergeWaterbody(out, k, v);
+        }
+      }
+    }
+    return out;
+  }
+
+  function mergeWaterbody(out, name, ramps) {
+    if (!out[name]) out[name] = [];
+    for (const [rampName, coords] of Object.entries(ramps)) {
+      if (!Array.isArray(coords) || coords.length < 2) continue;
+      const [lat, lon] = coords;
+      if (!isFinite(lat) || !isFinite(lon)) continue;
+      // Dedupe by name
+      if (!out[name].some(r => r.name === rampName)) {
+        out[name].push({ name: rampName, lat: +lat, lon: +lon });
+      }
+    }
+  }
+
+  // Apply SCDNR_OVERRIDES to a waterbody's ramps before returning them.
+  function applyOverrides(wbName, ramps) {
+    const ov = SCDNR_OVERRIDES[wbName];
+    if (!ov) return ramps.map(r => ({ ...r }));
+    let filtered = ramps;
+    if (Array.isArray(ov.excludeRampNames)) {
+      filtered = filtered.filter(r => !ov.excludeRampNames.includes(r.name));
+    }
+    return filtered.map(r => {
+      const note = ov.rampNotes?.[r.name];
+      return note ? { ...r, note } : { ...r };
+    });
+  }
+
+  // Get all ramps for a given fishing system (or raw SCDNR key if no system matches).
+  function getFishingRamps(systemOrKeyName) {
+    const launches = flattenLaunches(getScdnrLaunches());
+
+    // 1. Is it a fishing system?
+    const sys = FISHING_SYSTEMS[systemOrKeyName];
+    if (sys) {
+      const merged = [];
+      for (const scdnrKey of sys.scdnrKeys) {
+        const ramps = applyOverrides(scdnrKey, launches[scdnrKey] || []);
+        for (const r of ramps) {
+          // Attach context: which SCDNR waterbody this came from + any annotation
+          const item = { ...r, _scdnrKey: scdnrKey };
+          if (sys.annotations?.[scdnrKey]) item._annotation = sys.annotations[scdnrKey];
+          if (sys.rampNotes?.[r.name]) item.note = sys.rampNotes[r.name];
+          merged.push(item);
+        }
+      }
+      return merged;
+    }
+
+    // 2. Fall back to direct SCDNR waterbody name (with overrides applied)
+    if (launches[systemOrKeyName]) {
+      return applyOverrides(systemOrKeyName, launches[systemOrKeyName]);
+    }
+
+    // 3. Nothing found
+    return [];
+  }
+
+  // List all the fishing systems + their member SCDNR keys (for UI dropdowns)
+  function listFishingSystems() {
+    return Object.entries(FISHING_SYSTEMS).map(([name, def]) => ({
+      name,
+      scdnrKeys: def.scdnrKeys,
+      defaultMapCenter: def.defaultMapCenter,
+    }));
+  }
+
+  // Get the notes/warnings attached to a fishing system or waterbody.
+  function getSystemNote(name) {
+    return FISHING_SYSTEMS[name]?.note || SCDNR_OVERRIDES[name]?.note || null;
+  }
+
+  // Expose
+  window.TrollMapFishingIndex = {
+    FISHING_SYSTEMS,
+    SCDNR_OVERRIDES,
+    getFishingRamps,
+    listFishingSystems,
+    getSystemNote,
+    // For debugging / sanity checks:
+    _flattenLaunches: flattenLaunches,
+    _getScdnrLaunches: getScdnrLaunches,
+  };
+  // Convenience global
+  window.getFishingRamps = getFishingRamps;
+
+  console.log('[trollmap_fishing_index] loaded — ' + Object.keys(FISHING_SYSTEMS).length
+    + ' fishing systems, ' + Object.keys(SCDNR_OVERRIDES).length + ' SCDNR overrides');
+})();
+
+</script>
+
+<!-- ─── Rivers tab: live conditions + dam release + kayak surge math ─── -->
+<script>
+/**
+ * trollmap_rivers.js — Drop-in Rivers tab module for TrollMap v9
+ *
+ * Add to index.html with a SINGLE line, anywhere after <body>:
+ *     <script src="trollmap_rivers.js"><\/script>
+ *
+ * Adds:
+ *   1. A new bottom-nav tab "🌊 Rivers"
+ *   2. A panel showing real-time river conditions for SC rivers
+ *   3. Live USGS stream data + dam-release-pattern detection
+ *   4. Kayak/canoe Go/No-Go safety logic computed by the Cloudflare worker
+ *   5. Upstream lake cross-link (so you see Murray pool when viewing Saluda, etc)
+ *
+ * Requires: the updated trollmap-worker.js (v11+) deployed to your Cloudflare worker.
+ *           The CF_WORKER_URL constant is read from window.CF_WORKER_URL (set by
+ *           index.html) — if absent we fall back to your published URL.
+ */
+(function () {
+  'use strict';
+
+  const WORKER_URL = (typeof window !== 'undefined' && window.CF_WORKER_URL)
+    || 'https://trollmap-worker.colonal1981.workers.dev';
+
+  // Rivers we currently support (matches keys in trollmap-worker.js RIVERS map)
+  // `ramps` is for the dropdown picker (key location names + coords)
+  const RIVERS = [
+    // Ramps sourced from VERIFIED TrollMap LAUNCHES data (index.html line 1164).
+    // If a ramp isn't in there, it's not in this list — no more guessing from
+    // address geocoding.
+    { key: 'wateree',  label: 'Wateree River',  center: [34.24, -80.65, 11], ramps: [
+      { name: 'Lugoff (just below dam)',                 lat: 34.33346, lon: -80.69973 },
+      { name: 'Highway 1 (Camden, USGS gauge)',          lat: 34.24486, lon: -80.65403 },
+      { name: 'WT Billy Tolar (mid-river)',              lat: 33.94721, lon: -80.62891 },
+    ]},
+    { key: 'congaree', label: 'Congaree River', center: [33.99, -81.05, 11], ramps: [
+      { name: 'Barney Jordan (Columbia)',                lat: 33.9649,  lon: -81.0357 },
+      { name: 'Thomas H Newman (Columbia)',              lat: 33.94915, lon: -81.02951 },
+      { name: 'Bates Bridge (near Wateree confluence)',  lat: 33.75342, lon: -80.64513 },
+    ]},
+    { key: 'saluda',   label: 'Lower Saluda River (cold tailwater)', center: [34.02, -81.19, 12], ramps: [
+      // From TrollMap LAUNCHES "Saluda River (Lower Saluda)" entry
+      { name: 'Hope Ferry',                              lat: 34.046,   lon: -81.19128 },
+      { name: 'Saluda Shoals Park',                      lat: 34.04679, lon: -81.19058 },
+      { name: 'Saluda Shoals Lower Boat Ramp',           lat: 34.04333, lon: -81.1634 },
+    ]},
+    { key: 'broad',    label: 'Broad River',    center: [34.59, -81.42, 11], ramps: [
+      // From TrollMap LAUNCHES "Broad River" entry.
+      // NOTE: The first entry "Broad River [32.39, -80.77]" in TrollMap is
+      // actually the COASTAL Broad near Beaufort, not the inland river above
+      // Columbia — excluded here to avoid confusion.
+      { name: 'Pick Hill Access',                        lat: 35.04108, lon: -81.49538 },
+      { name: '99 Island',                               lat: 35.02678, lon: -81.48986 },
+      { name: "Dalton's Landing",                        lat: 34.93595, lon: -81.47303 },
+      { name: 'Woods Ferry Recreation Area',             lat: 34.70321, lon: -81.45383 },
+      { name: 'Woods Ferry',                             lat: 34.70983, lon: -81.45617 },
+      { name: 'Sandy & Broad River',                     lat: 34.57281, lon: -81.42221 },
+      { name: 'Shelton Ferry',                           lat: 34.48854, lon: -81.42429 },
+    ]},
+    { key: 'santee',   label: 'Santee River',   center: [33.42, -80.01, 11], ramps: [
+      // From TrollMap LAUNCHES "Santee River" entry, ordered upstream→downstream
+      { name: 'Wilsons (near Marion dam)',               lat: 33.44829, lon: -80.15833 },
+      { name: 'Highway 52',                              lat: 33.49487, lon: -79.96049 },
+      { name: 'Arrowhead Landing',                       lat: 33.40441, lon: -79.86331 },
+      { name: 'Lenuds',                                  lat: 33.30431, lon: -79.67896 },
+      { name: 'McConnels',                               lat: 33.24514, lon: -79.52085 },
+    ]},
+    { key: 'cooper',   label: 'Cooper River (Pinopolis tailrace → Charleston Harbor)',
+      center: [33.04, -79.95, 11],
+      // Ramps pulled at runtime from window.getFishingRamps() if available
+      // (see trollmap_fishing_index.js). Falls back to this hardcoded list
+      // if the overlay module isn't loaded.
+      fishingSystem: 'Cooper River system (Pinopolis tailrace → Charleston Harbor)',
+      ramps: [
+      // Pulled from MULTIPLE TrollMap LAUNCHES entries because the Cooper
+      // system spans several named waterbodies that flow together. The
+      // William Dennis landing is filed under "Tail Race Canal" because
+      // it's on the Pinopolis dam tailrace specifically (great shad fishing
+      // when Santee Cooper is generating — *temporarily closed for renovations
+      // 2026; reopening pending*).
+      { name: 'William Dennis (Pinopolis tailrace) ⚠ temporarily closed for renovations',
+                                                          lat: 33.21311, lon: -79.97347 },
+      { name: 'Rembert C Dennis (Wadboo Creek)',         lat: 33.19601, lon: -79.95324 },
+      { name: 'Huger Park (upper Cooper)',               lat: 33.13111, lon: -79.81111 },
+      { name: 'John R Bettis (Goose Creek)',             lat: 32.93278, lon: -80.02266 },
+      { name: 'Bushy Park - Fresh Water (Back River)',   lat: 32.96781, lon: -79.93751 },
+      { name: 'Bushy Park - Salt Water (Cooper)',        lat: 32.96708, lon: -79.93709 },
+      { name: "R. M. Hendrick's / Virginia Av. Park (Charleston harbor)",
+                                                          lat: 32.89113, lon: -79.97103 },
+    ]},
+  ];
+
+  // Currently-selected user location for the active river
+  let USER_LOC = null;  // { lat, lon, sourceLabel }
+
+  // ---------------------------------------------------------------------------
+  // Inject CSS — scoped to .tm-rivers to avoid clobbering host styles
+  // ---------------------------------------------------------------------------
+  const CSS = `
+    #panel-rivers { display:none; }
+    #panel-rivers.active { display:block; }
+    .tm-rivers { padding: 12px; max-width: 900px; }
+    .tm-rivers h2 { margin: 4px 0 12px; color: #ffb703; font-size: 18px; }
+    .tm-rivers .tm-river-picker { display:flex; gap:8px; flex-wrap:wrap; margin-bottom: 12px; }
+    .tm-rivers .tm-river-picker select { flex:1; min-width: 180px; padding:8px; background:#1f2530; color:#e6e6e6; border:1px solid #2a2f38; border-radius:6px; font-size:14px; }
+    .tm-rivers .tm-river-picker button { padding:8px 14px; background:#ffb703; color:#000; border:none; border-radius:6px; font-weight:700; cursor:pointer; }
+    .tm-rivers .tm-river-picker button:hover { background:#ffc733; }
+    .tm-rivers .tm-river-picker button:disabled { background:#666; color:#aaa; cursor:wait; }
+
+    .tm-rivers .tm-status-card { padding:14px; border-radius:8px; margin-bottom:12px; border:2px solid; }
+    .tm-rivers .tm-status-go      { background:#13301f; border-color:#3ddc97; }
+    .tm-rivers .tm-status-caution { background:#3a3010; border-color:#ffb703; }
+    .tm-rivers .tm-status-no-go   { background:#3a1010; border-color:#ff5252; }
+    .tm-rivers .tm-status-card h3 { margin:0 0 4px; font-size:20px; }
+    .tm-rivers .tm-status-card .tm-status-icon { font-size:28px; vertical-align:middle; margin-right:6px; }
+    .tm-rivers .tm-status-card .tm-status-reasons { margin:8px 0 0; padding-left:20px; }
+    .tm-rivers .tm-status-card .tm-status-reasons li { margin: 3px 0; line-height: 1.4; }
+
+    .tm-rivers .tm-metrics { display:grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap:8px; margin-bottom:12px; }
+    .tm-rivers .tm-metric { background:#171b22; border:1px solid #2a2f38; border-radius:6px; padding:10px; }
+    .tm-rivers .tm-metric .tm-metric-label { font-size:10px; color:#888; text-transform:uppercase; letter-spacing:.5px; }
+    .tm-rivers .tm-metric .tm-metric-value { font-size:22px; font-weight:700; color:#fff; margin-top:2px; }
+    .tm-rivers .tm-metric .tm-metric-unit { font-size:12px; color:#aaa; margin-left:2px; }
+    .tm-rivers .tm-metric.tm-flagged .tm-metric-value { color: #ffb703; }
+    .tm-rivers .tm-metric.tm-danger  .tm-metric-value { color: #ff5252; }
+    .tm-rivers .tm-metric.tm-cold    .tm-metric-value { color: #3a86ff; }
+
+    .tm-rivers .tm-section { background:#171b22; border:1px solid #2a2f38; border-radius:6px; padding:12px; margin-bottom:12px; }
+    .tm-rivers .tm-section h4 { margin:0 0 8px; color:#3a86ff; font-size:14px; }
+    .tm-rivers .tm-section .tm-meta { font-size:12px; color:#aaa; margin: 2px 0; }
+    .tm-rivers .tm-section .tm-notes { font-size:13px; color:#ddd; line-height:1.5; font-style:italic; padding-left:8px; border-left:3px solid #3a86ff; }
+    .tm-rivers .tm-gauge-list { font-size:12px; color:#bbb; }
+    .tm-rivers .tm-gauge-list a { color:#3a86ff; text-decoration:none; }
+    .tm-rivers .tm-gauge-list a:hover { text-decoration:underline; }
+
+    .tm-rivers .tm-spinner { display:inline-block; width:14px; height:14px; border:2px solid #444; border-top-color:#ffb703; border-radius:50%; animation: tm-spin .8s linear infinite; vertical-align:middle; margin-right:6px; }
+    @keyframes tm-spin { to { transform: rotate(360deg); } }
+
+    .tm-rivers .tm-fly-btn { margin-left:6px; padding:3px 8px; font-size:11px; background:#3a86ff; color:#fff; border:none; border-radius:3px; cursor:pointer; }
+
+    .tm-rivers .tm-error { background:#3a1010; border:1px solid #ff5252; padding:10px; border-radius:6px; color:#ffaaaa; }
+    .tm-rivers .tm-timestamp { font-size:11px; color:#666; text-align:right; margin-top:6px; }
+
+    /* Location picker */
+    .tm-rivers .tm-loc-picker { background:#0a1428; border:1px solid #3a86ff; padding:10px; border-radius:6px; margin-bottom:12px; }
+    .tm-rivers .tm-loc-picker h4 { margin:0 0 6px; color:#3a86ff; font-size:13px; }
+    .tm-rivers .tm-loc-row { display:flex; gap:6px; flex-wrap:wrap; align-items:center; margin-top:6px; }
+    .tm-rivers .tm-loc-row button { padding:6px 10px; background:#3a86ff; color:#fff; border:none; border-radius:4px; cursor:pointer; font-size:12px; }
+    .tm-rivers .tm-loc-row button:hover { background:#5a96ff; }
+    .tm-rivers .tm-loc-row button.tm-loc-active { background:#3ddc97; color:#000; }
+    .tm-rivers .tm-loc-row select { flex:1; min-width:140px; padding:5px; background:#1f2530; color:#e6e6e6; border:1px solid #2a2f38; border-radius:4px; font-size:12px; }
+    .tm-rivers .tm-loc-display { font-size:12px; color:#ccc; margin-top:6px; }
+    .tm-rivers .tm-loc-display b { color:#3ddc97; }
+
+    /* User location surge card */
+    .tm-rivers .tm-user-surge { background:#2b2310; border:2px solid #ffb703; padding:12px; border-radius:6px; margin-bottom:12px; }
+    .tm-rivers .tm-user-surge.tm-user-imminent { background:#3a1010; border-color:#ff5252; }
+    .tm-rivers .tm-user-surge.tm-user-safe { background:#13301f; border-color:#3ddc97; }
+    .tm-rivers .tm-user-surge h4 { margin:0 0 8px; color:#fff; font-size:14px; }
+    .tm-rivers .tm-user-surge .tm-surge-big { font-size:24px; font-weight:700; color:#fff; }
+    .tm-rivers .tm-user-surge .tm-surge-meta { font-size:12px; color:#ccc; margin-top:4px; }
+
+    /* Dam schedule cards */
+    .tm-rivers .tm-schedule-list { display:flex; flex-direction:column; gap:6px; }
+    .tm-rivers .tm-sched-event { display:flex; align-items:center; gap:10px; padding:8px 10px; background:#0e1116; border:1px solid #2a2f38; border-radius:5px; font-size:13px; }
+    .tm-rivers .tm-sched-event.tm-sched-imminent { border-color:#ff5252; background:#2b1414; }
+    .tm-rivers .tm-sched-event.tm-sched-soon { border-color:#ffb703; background:#2b2310; }
+    .tm-rivers .tm-sched-when { font-weight:700; color:#fff; min-width:90px; }
+    .tm-rivers .tm-sched-arr { color:#3a86ff; }
+    .tm-rivers .tm-sched-mile { flex:1; color:#ddd; }
+    .tm-rivers .tm-sched-dur { color:#888; font-size:11px; }
+
+    /* Dominion color status */
+    .tm-rivers .tm-dom-row { display:flex; gap:14px; align-items:center; margin: 6px 0; }
+    .tm-rivers .tm-dom-color { display:inline-block; width:22px; height:22px; border-radius:50%; vertical-align:middle; border:2px solid #fff; }
+    .tm-rivers .tm-dom-color.tm-dom-blue   { background:#3a86ff; }
+    .tm-rivers .tm-dom-color.tm-dom-green  { background:#3ddc97; }
+    .tm-rivers .tm-dom-color.tm-dom-yellow { background:#ffb703; }
+    .tm-rivers .tm-dom-color.tm-dom-red    { background:#ff5252; }
+    .tm-rivers .tm-dom-legend { display:grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap:6px; margin-top:8px; }
+    .tm-rivers .tm-dom-legend-item { padding:5px 8px; border-radius:4px; font-size:11px; color:#000; }
+  `;
+  const styleEl = document.createElement('style');
+  styleEl.textContent = CSS;
+  document.head.appendChild(styleEl);
+
+  // ---------------------------------------------------------------------------
+  // Build the panel HTML and inject before the closing </main> (or end of body)
+  // ---------------------------------------------------------------------------
+  function buildPanel() {
+    const opts = RIVERS.map(r => `<option value="${r.key}">${r.label}</option>`).join('');
+    const panel = document.createElement('section');
+    panel.className = 'panel';
+    panel.id = 'panel-rivers';
+    panel.innerHTML = `
+      <div class="tm-rivers">
+        <h2>🌊 River Conditions & Kayak Go/No-Go</h2>
+        <div class="tm-river-picker">
+          <select id="tmRiverSelect">
+            <option value="">Choose a river…</option>
+            ${opts}
+          </select>
+          <button id="tmRiverRefresh" disabled>🔄 Refresh</button>
+        </div>
+        <div id="tmRiverResult"></div>
+      </div>
+    `;
+    // Insert as a sibling of the other .panel elements
+    const firstPanel = document.querySelector('.panel');
+    if (firstPanel && firstPanel.parentNode) {
+      firstPanel.parentNode.appendChild(panel);
+    } else {
+      document.body.appendChild(panel);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Add the tab to the bottom nav (matches the existing nav button style)
+  // ---------------------------------------------------------------------------
+  function addNavTab() {
+    const nav = document.getElementById('bottomNav');
+    if (!nav) return;
+    // Don't duplicate if re-injected
+    if (nav.querySelector('[data-tab="rivers"]')) return;
+    const btn = document.createElement('button');
+    btn.dataset.tab = 'rivers';
+    btn.innerHTML = '<span class="ico">🌊</span>Rivers';
+    // Insert after the "map" tab if present, else append
+    const mapBtn = nav.querySelector('[data-tab="map"]');
+    if (mapBtn && mapBtn.nextSibling) {
+      nav.insertBefore(btn, mapBtn.nextSibling);
+    } else {
+      nav.appendChild(btn);
+    }
+    // The host index.html wires nav clicks via delegation already — but if not,
+    // we add our own click handler as a safety net.
+    btn.addEventListener('click', () => {
+      // Hide all panels
+      document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+      // Show ours
+      document.getElementById('panel-rivers')?.classList.add('active');
+      // Update nav highlighting
+      nav.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Render river conditions for the selected river
+  // ---------------------------------------------------------------------------
+  let CURRENT_KEY = null;
+
+  async function loadRiver(key) {
+    CURRENT_KEY = key;
+    const out = document.getElementById('tmRiverResult');
+    const btn = document.getElementById('tmRiverRefresh');
+    out.innerHTML = '<div class="tm-section"><span class="tm-spinner"></span>Fetching live USGS + dam data…</div>';
+    btn.disabled = true;
+    try {
+      let url = `${WORKER_URL}/river?river=${encodeURIComponent(key)}`;
+      if (USER_LOC && USER_LOC.lat != null && USER_LOC.lon != null) {
+        url += `&lat=${USER_LOC.lat}&lon=${USER_LOC.lon}`;
+      }
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`Worker returned HTTP ${res.status}`);
+      const data = await res.json();
+      out.innerHTML = renderLocationPicker(key) + renderRiver(data);
+      wireFlyButtons();
+      wireLocationPicker();
+    } catch (err) {
+      out.innerHTML = `<div class="tm-error">⚠ Couldn't load river data: ${err.message}<br>
+        <small>Worker URL: ${WORKER_URL}</small></div>`;
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  function renderLocationPicker(riverKey) {
+    const river = RIVERS.find(r => r.key === riverKey);
+    if (!river) return '';
+
+    // Prefer the fisherman-friendly overlay if available
+    let ramps = river.ramps || [];
+    if (river.fishingSystem && typeof window.getFishingRamps === 'function') {
+      const overlayRamps = window.getFishingRamps(river.fishingSystem);
+      if (overlayRamps && overlayRamps.length) {
+        ramps = overlayRamps.map(r => ({
+          name: r.note ? `${r.name} (${r._annotation || r._scdnrKey || ''}) ${r.note}`
+              : r._annotation ? `${r.name} (${r._annotation})`
+              : r._scdnrKey ? `${r.name} (${r._scdnrKey})`
+              : r.name,
+          lat: r.lat, lon: r.lon,
+        }));
+      }
+    }
+
+    const rampsOptions = ramps.map(r =>
+      `<option value="${r.lat},${r.lon}|${escapeHtml(r.name)}">${escapeHtml(r.name)}</option>`
+    ).join('');
+    const locDisplay = USER_LOC
+      ? `<div class="tm-loc-display">📍 <b>${escapeHtml(USER_LOC.sourceLabel || 'Your location')}</b> (${USER_LOC.lat.toFixed(4)}, ${USER_LOC.lon.toFixed(4)})
+         &nbsp; <button id="tmLocClear" style="background:#666;padding:2px 6px;font-size:11px">✕ clear</button></div>`
+      : `<div class="tm-loc-display">No location set — surge timing will use the Duke anchor mile (~Hwy 1/601 Landing).</div>`;
+    return `
+      <div class="tm-loc-picker">
+        <h4>📍 Where are you on the river?</h4>
+        <div style="font-size:11px;color:#aaa">Surge timing &amp; severity depend on your distance from the dam.</div>
+        <div class="tm-loc-row">
+          <button id="tmLocGps">🛰 Use my GPS</button>
+          <button id="tmLocMap">🗺 Click on map</button>
+          ${rampsOptions ? `<select id="tmLocRamp">
+            <option value="">Pick a known ramp…</option>
+            ${rampsOptions}
+          </select>` : ''}
+        </div>
+        ${locDisplay}
+      </div>
+    `;
+  }
+
+  function wireLocationPicker() {
+    document.getElementById('tmLocGps')?.addEventListener('click', useGps);
+    document.getElementById('tmLocMap')?.addEventListener('click', useMapClick);
+    document.getElementById('tmLocRamp')?.addEventListener('change', e => {
+      const v = e.target.value;
+      if (!v) return;
+      const [coords, name] = v.split('|');
+      const [lat, lon] = coords.split(',').map(parseFloat);
+      USER_LOC = { lat, lon, sourceLabel: name };
+      loadRiver(CURRENT_KEY);
+    });
+    document.getElementById('tmLocClear')?.addEventListener('click', () => {
+      USER_LOC = null;
+      loadRiver(CURRENT_KEY);
+    });
+  }
+
+  function useGps() {
+    if (!navigator.geolocation) { alert('Geolocation not supported by your browser.'); return; }
+    const btn = document.getElementById('tmLocGps');
+    btn.textContent = '⏳ getting GPS…';
+    btn.disabled = true;
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        USER_LOC = { lat: pos.coords.latitude, lon: pos.coords.longitude, sourceLabel: 'GPS' };
+        loadRiver(CURRENT_KEY);
+      },
+      err => {
+        alert('Couldn\'t get GPS: ' + err.message);
+        btn.textContent = '🛰 Use my GPS'; btn.disabled = false;
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+    );
+  }
+
+  function useMapClick() {
+    if (typeof window.MAP === 'undefined' || !window.MAP) {
+      alert('Map not available — pick a ramp from the dropdown or use GPS.');
+      return;
+    }
+    // Switch to map tab
+    const mapBtn = document.querySelector('#bottomNav [data-tab="map"]');
+    if (mapBtn) mapBtn.click();
+    alert('Tap once on the map at your put-in / current location.');
+    const handler = (e) => {
+      USER_LOC = { lat: e.latlng.lat, lon: e.latlng.lng, sourceLabel: 'Map pin' };
+      window.MAP.off('click', handler);
+      // Switch back to rivers tab
+      const rb = document.querySelector('#bottomNav [data-tab="rivers"]');
+      if (rb) rb.click();
+      loadRiver(CURRENT_KEY);
+    };
+    window.MAP.once('click', handler);
+  }
+
+  function renderRiver(d) {
+    if (d.error) return `<div class="tm-error">${d.error}</div>`;
+
+    const k = d.kayak_assessment || { status: 'go', reasons: [], metrics: {} };
+    const statusCls = `tm-status-${k.status}`;
+    const statusIcon = k.status === 'go' ? '✅' : k.status === 'caution' ? '⚠️' : '🛑';
+    const statusText = k.status === 'go' ? 'GO — Conditions Acceptable'
+                     : k.status === 'caution' ? 'CAUTION — Heightened Risk'
+                     : 'NO GO — Unsafe for Kayak/Canoe';
+
+    const reasonsHtml = (k.reasons || []).map(r => `<li>${escapeHtml(r)}</li>`).join('');
+
+    // Metrics from the primary gauge
+    const primary = d.gauges.find(g => g.primary) || d.gauges[0] || {};
+    const metrics = [
+      { label: 'Streamflow', value: primary.streamflow_cfs, unit: 'cfs',
+        flag: (k.metrics?.streamflow_cfs && k.metrics.streamflow_cfs > 5000) ? 'danger' : '' },
+      { label: 'Gauge Height', value: primary.gage_height_ft, unit: 'ft' },
+      { label: 'Water Temp', value: primary.water_temperature_F, unit: '°F',
+        flag: (primary.water_temperature_F != null && primary.water_temperature_F < 60) ? 'cold' : '' },
+      { label: 'Rate of Rise', value: primary.rate_of_rise_ft_per_hr, unit: 'ft/hr',
+        flag: (primary.rate_of_rise_ft_per_hr != null && Math.abs(primary.rate_of_rise_ft_per_hr) > 0.5) ? 'flagged' : '' },
+      { label: 'Elevation (NAVD88)', value: primary.water_elevation_ft_navd88, unit: 'ft' },
+    ];
+    const metricsHtml = metrics.filter(m => m.value != null).map(m => `
+      <div class="tm-metric ${m.flag ? 'tm-'+m.flag : ''}">
+        <div class="tm-metric-label">${m.label}</div>
+        <div class="tm-metric-value">${m.value}<span class="tm-metric-unit">${m.unit}</span></div>
+      </div>
+    `).join('');
+
+    // User-location-specific surge card (only when user passed coords)
+    let userSurgeHtml = '';
+    if (d.user_location && d.user_location.minutes_until_surge_at_user != null) {
+      const u = d.user_location;
+      const m = u.minutes_until_surge_at_user;
+      const sev = u.surge_severity_factor;
+      const arrTime = new Date(u.surge_arrival_epoch).toLocaleString('en-US',
+        { timeZone: 'America/New_York', weekday: 'short', hour: 'numeric', minute: '2-digit' });
+      const sevColor = sev > 0.75 ? '#ff5252' : sev > 0.5 ? '#ffb703' : sev > 0.3 ? '#ffd166' : '#3ddc97';
+      const imminent = m > 0 && m < 120 && sev >= 0.5;
+      const safe = m > 720 || sev < 0.3;  // >12h out or minor severity
+      const cls = imminent ? 'tm-user-imminent' : safe ? 'tm-user-safe' : '';
+      const whenLabel = m < 0 ? `${Math.abs(Math.round(m))} min ago (passed)`
+                     : m < 60 ? `in ${Math.round(m)} min`
+                     : m < 1440 ? `in ${(m/60).toFixed(1)} hours`
+                              : `in ${(m/1440).toFixed(1)} days`;
+      userSurgeHtml = `
+        <div class="tm-user-surge ${cls}">
+          <h4>📍 Surge Arrival at YOUR Location</h4>
+          <div class="tm-surge-big">${escapeHtml(whenLabel)}</div>
+          <div class="tm-surge-meta">
+            Estimated arrival: <b>${escapeHtml(arrTime)} ET</b><br>
+            You're at river mile <b>${u.river_mile_from_dam}</b> below the dam
+            (${u.river_miles_remaining_to_confluence} mi to confluence)<br>
+            Nearest reference: <b>${escapeHtml(u.nearestWaypoint)}</b>
+            (${u.distance_to_waypoint_mi} mi away)<br>
+            Surge severity at this distance:
+            <b style="color:${sevColor}">${u.surge_severity_label.toUpperCase()}</b>
+            (factor ${sev}) — surge weakens as it travels downstream<br>
+            <small>Surge celerity assumed ~${u.surge_speed_mph} mph (typical for this river)</small>
+          </div>
+        </div>
+      `;
+    }
+
+    // Dam release schedule card — the most important new feature
+    let schedHtml = '';
+    if (d.dam_schedule) {
+      const s = d.dam_schedule;
+      if (s.type === 'duke_flow_arrivals' && s.upcoming && s.upcoming.length) {
+        const eventsHtml = s.upcoming.map(ev => {
+          const minutesUntil = (ev.arrivalEpoch - Date.now()) / 60000;
+          const hoursUntil = minutesUntil / 60;
+          const whenLabel = minutesUntil < 60   ? `${Math.round(minutesUntil)} min`
+                         :  hoursUntil < 24     ? `${Math.round(hoursUntil*10)/10} hr`
+                                                : `${Math.round(hoursUntil/24*10)/10} d`;
+          const cls = minutesUntil < 120 ? 'tm-sched-imminent'
+                    : minutesUntil < 360 ? 'tm-sched-soon' : '';
+          const arrTime = new Date(ev.arrivalEpoch).toLocaleString('en-US',
+            { timeZone: 'America/New_York', weekday: 'short', hour: 'numeric', minute: '2-digit' });
+          const durHrs = ev.recedesEpoch ? Math.round((ev.recedesEpoch - ev.arrivalEpoch)/3600000*10)/10 : null;
+          return `
+            <div class="tm-sched-event ${cls}">
+              <span class="tm-sched-when">in ${whenLabel}</span>
+              <span class="tm-sched-arr">${escapeHtml(arrTime)}</span>
+              <span class="tm-sched-mile">📍 ${escapeHtml(ev.mileMarkerName)} <small style="color:#888">(${escapeHtml(ev.damName)})</small></span>
+              ${durHrs ? `<span class="tm-sched-dur">~${durHrs}h release</span>` : ''}
+            </div>`;
+        }).join('');
+        schedHtml = `
+          <div class="tm-section">
+            <h4>⏰ Scheduled Dam Releases (next ${s.upcoming.length})</h4>
+            <div class="tm-meta">Direct from Duke Energy's live operations API</div>
+            <div class="tm-schedule-list" style="margin-top:8px">${eventsHtml}</div>
+            <div class="tm-timestamp">Duke schedule last updated: ${escapeHtml(s.lastUpdated || 'n/a')}</div>
+          </div>`;
+      } else if (s.type === 'dominion_color_status') {
+        const colorBadge = (c, lbl) => c ? `
+          <span class="tm-dom-color tm-dom-${c}" title="${escapeHtml(lbl||c)}"></span>
+          <b style="color:#fff;text-transform:uppercase">${escapeHtml(c)}</b>` : '<i>n/a</i>';
+        const legendHtml = Object.entries(s.colorLegend || {}).map(([c, def]) => `
+          <div class="tm-dom-legend-item" style="background:${
+            c==='blue'?'#3a86ff':c==='green'?'#3ddc97':c==='yellow'?'#ffb703':'#ff5252'};">
+            <b>${c.toUpperCase()}</b>: ${def.min}–${def.max} cfs
+          </div>`).join('');
+        schedHtml = `
+          <div class="tm-section">
+            <h4>🎨 Dominion Flow Status (Lower Saluda)</h4>
+            <div class="tm-meta">Dominion uses a color-coded flow system, scraped live from their public page.</div>
+            <div class="tm-dom-row" style="margin-top:8px">
+              <span><b>Today:</b> ${colorBadge(s.currentColor, s.currentRange)}</span>
+              <span><b>Planned:</b> ${colorBadge(s.plannedColor, s.plannedRange)}</span>
+            </div>
+            ${s.currentRange ? `<div class="tm-notes" style="margin-top:6px">${escapeHtml(s.currentRange)}</div>` : ''}
+            <div class="tm-dom-legend">${legendHtml}</div>
+            <div class="tm-meta" style="margin-top:8px">Source: <a href="${s.source}" target="_blank">dominionenergy.com</a></div>
+          </div>`;
+      }
+    }
+
+    // Upstream lake card
+    let lakeHtml = '';
+    if (d.upstream_lake) {
+      const L = d.upstream_lake;
+      lakeHtml = `
+        <div class="tm-section">
+          <h4>⛽ Upstream Lake: ${escapeHtml(L.name)}</h4>
+          <div class="tm-meta">Pool elevation: <b>${L.elevation_ft != null ? L.elevation_ft.toFixed(2)+' ft' : 'n/a'}</b>
+            ${L.percent_full != null ? `(${L.percent_full.toFixed(1)}% full)` : ''}
+            ${L.full_pool_ft != null ? `· full pool ${L.full_pool_ft} ft` : ''}</div>
+          ${L.special_message ? `<div class="tm-notes" style="margin-top:6px"><b>📢 Operator notice:</b> ${escapeHtml(L.special_message)}</div>` : ''}
+        </div>
+      `;
+    }
+
+    // Gauge list with map fly-to buttons
+    const gaugesHtml = d.gauges.map(g => `
+      <div class="tm-meta">
+        <a href="https://waterdata.usgs.gov/monitoring-location/${g.site}/" target="_blank">USGS ${g.site}</a>
+        — ${escapeHtml(g.name)} ${g.primary ? '<b style="color:#3ddc97">[primary]</b>' : ''}
+        <button class="tm-fly-btn" data-fly-lat="${g.lat}" data-fly-lon="${g.lon}">📍 fly to</button>
+      </div>
+    `).join('');
+
+    return `
+      <div class="tm-status-card ${statusCls}">
+        <h3><span class="tm-status-icon">${statusIcon}</span>${statusText}</h3>
+        <div style="font-size:13px;color:#ccc;margin-top:4px">${escapeHtml(d.river)}</div>
+        <ul class="tm-status-reasons">${reasonsHtml}</ul>
+      </div>
+
+      <div class="tm-metrics">${metricsHtml}</div>
+
+      ${userSurgeHtml}
+
+      ${schedHtml}
+
+      ${lakeHtml}
+
+      <div class="tm-section">
+        <h4>🏭 Dam &amp; Operator</h4>
+        <div class="tm-meta"><b>Operator:</b> ${escapeHtml(d.operator)}</div>
+        <div class="tm-meta"><b>Dam:</b> ${escapeHtml(d.dam)}</div>
+        ${d.notes ? `<div class="tm-notes" style="margin-top:6px">${escapeHtml(d.notes)}</div>` : ''}
+      </div>
+
+      <div class="tm-section">
+        <h4>📍 USGS Gauges</h4>
+        ${gaugesHtml}
+      </div>
+
+      <div class="tm-timestamp">Last updated: ${escapeHtml(primary.timestamp || d.timestamp)}</div>
+    `;
+  }
+
+  function wireFlyButtons() {
+    document.querySelectorAll('.tm-fly-btn').forEach(b => {
+      b.onclick = () => {
+        const lat = parseFloat(b.dataset.flyLat);
+        const lon = parseFloat(b.dataset.flyLon);
+        if (!isFinite(lat) || !isFinite(lon)) return;
+        if (typeof window.MAP !== 'undefined' && window.MAP) {
+          // Switch to map tab if the host app has one
+          const mapBtn = document.querySelector('#bottomNav [data-tab="map"]');
+          if (mapBtn) mapBtn.click();
+          window.MAP.setView([lat, lon], 14);
+        } else {
+          window.open(`https://www.google.com/maps?q=${lat},${lon}`, '_blank');
+        }
+      };
+    });
+  }
+
+  function escapeHtml(s) {
+    if (s == null) return '';
+    return String(s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Bootstrap
+  // ---------------------------------------------------------------------------
+  function init() {
+    // Don't double-init if hot-reloaded
+    if (document.getElementById('panel-rivers')) return;
+    buildPanel();
+    addNavTab();
+
+    const sel = document.getElementById('tmRiverSelect');
+    const btn = document.getElementById('tmRiverRefresh');
+    sel.addEventListener('change', () => {
+      btn.disabled = !sel.value;
+      if (sel.value) loadRiver(sel.value);
+    });
+    btn.addEventListener('click', () => sel.value && loadRiver(sel.value));
+
+    console.log('[trollmap_rivers] loaded — worker:', WORKER_URL);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    // Small delay so we load AFTER index.html's own DOMContentLoaded handlers
+    setTimeout(init, 100);
+  }
+})();
+
+</script>
+
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a0dbbf447c4653b1',t:'MTc4MTgwMDk0NQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
