@@ -3877,12 +3877,19 @@ function collectPlan(){
       waterbodyLabel: isPlanRiverValue(document.getElementById('planLake').value) ? (getPlanRiverDef(document.getElementById('planLake').value)?.label || document.getElementById('planLake').value) : document.getElementById('planLake').value,
       ramp: document.getElementById('planRamp').value,
       riverSummary: document.getElementById('planRiverSummary')?.value || '',
+      riverSafety: document.getElementById('planRiverSafety')?.value || '',
+      riverFlow: document.getElementById('planRiverFlow')?.value || '',
+      riverGauge: document.getElementById('planRiverGauge')?.value || '',
+      riverTemp: document.getElementById('planRiverTemp')?.value || '',
+      riverRise: document.getElementById('planRiverRise')?.value || '',
+      riverSurgeEta: document.getElementById('planRiverSurgeEta')?.value || '',
+      riverSchedule: document.getElementById('planRiverSchedule')?.value || '',
       launchTime: document.getElementById('planLaunchTime').value,
       returnTime: document.getElementById('planReturnTime').value,
       waterTemp: document.getElementById('planWaterTemp').value,
-      fullPool: document.getElementById('planFullPool')?.value || '',
-      poolLevel: document.getElementById('planPoolLevel')?.value || '',
-      poolUnit: typeof getPlanLakeLevelUnit === 'function' ? getPlanLakeLevelUnit() : 'ft',
+      fullPool: isPlanRiverValue(document.getElementById('planLake').value) ? '' : (document.getElementById('planFullPool')?.value || ''),
+      poolLevel: isPlanRiverValue(document.getElementById('planLake').value) ? '' : (document.getElementById('planPoolLevel')?.value || ''),
+      poolUnit: isPlanRiverValue(document.getElementById('planLake').value) ? '' : (typeof getPlanLakeLevelUnit === 'function' ? getPlanLakeLevelUnit() : 'ft'),
       weather: document.getElementById('planWeather').value,
       clarity: document.getElementById('planClarity').value,
       motor: document.getElementById('planMotor').value,
@@ -3923,6 +3930,13 @@ function loadPlanIntoForm(p){
   populatePlanRampDropdown(m.lake||'');
   document.getElementById('planRamp').value = m.ramp||'';
   if(document.getElementById('planRiverSummary')) document.getElementById('planRiverSummary').value = m.riverSummary||'';
+  if(document.getElementById('planRiverSafety')) document.getElementById('planRiverSafety').value = m.riverSafety||'';
+  if(document.getElementById('planRiverFlow')) document.getElementById('planRiverFlow').value = m.riverFlow||'';
+  if(document.getElementById('planRiverGauge')) document.getElementById('planRiverGauge').value = m.riverGauge||'';
+  if(document.getElementById('planRiverTemp')) document.getElementById('planRiverTemp').value = m.riverTemp||'';
+  if(document.getElementById('planRiverRise')) document.getElementById('planRiverRise').value = m.riverRise||'';
+  if(document.getElementById('planRiverSurgeEta')) document.getElementById('planRiverSurgeEta').value = m.riverSurgeEta||'';
+  if(document.getElementById('planRiverSchedule')) document.getElementById('planRiverSchedule').value = m.riverSchedule||'';
   document.getElementById('planLaunchTime').value = m.launchTime||'06:00';
   document.getElementById('planReturnTime').value = m.returnTime||'12:00';
   document.getElementById('planWaterTemp').value = m.waterTemp||'';
@@ -4143,7 +4157,7 @@ async function buildPlanPreviewHtml(p){
   }
 
   const speciesSelected = p.meta.species || [];
-  const lakeForRegs = p.meta.lake || '';
+  const lakeForRegs = p.meta.waterbodyLabel || p.meta.lake || '';
   let regsRows = '';
   speciesSelected.forEach(sp=>{
     const r = getRegs(sp, lakeForRegs);
@@ -4200,7 +4214,7 @@ async function buildPlanPreviewHtml(p){
   let pressureHtml = '', windHtml = '', uvHtml = '', solunarAutoRows = '';
   let moonPhase = '', moonIllum = 0;
   let damHtml = '', tidesHtml = '', usgsHtml = '';
-  const lake = p.meta.lake || '';
+  const lake = p.meta.waterbodyLabel || p.meta.lake || '';
   const cleanLake = lake.split(',')[0].trim();
   const matchedKey = Object.keys(LAKE_DB).find(k => cleanLake.toLowerCase().includes(k.toLowerCase()) || k.toLowerCase().includes(cleanLake.toLowerCase()));
   const lakeEntry = LAKE_DB[matchedKey] || LAKE_DB[cleanLake] || LAKE_DB[lake];
@@ -4664,7 +4678,7 @@ ${pressureHtml}
       <div style="display:flex;flex-direction:column;gap:5px">
         <span>• <b>Water Temperature</b>: Exactly ${p.meta.waterTemp||'72'}°F</span>
         <span>• <b>Wind Forecast / Gusts</b>: Exactly ${esc(p.meta.weather||'WSW 11 mph')}</span>
-        <span>• <b>Water Level Stage</b>: Exactly ${esc(p.meta.poolLevel||'100.0')} ${esc(p.meta.poolUnit||'ft')} ${(p.meta.poolUnit||'ft').includes('%') ? '(Duke full-pond scale)' : (parseFloat(p.meta.poolLevel)<98?'(Drawdown Threat)':'(Lake Level Synced)')}</span>
+        <span>• <b>${p.meta.waterbodyType==='river'?'River Safety / Flow':'Water Level Stage'}</b>: ${p.meta.waterbodyType==='river' ? esc([p.meta.riverSafety, p.meta.riverFlow, p.meta.riverSurgeEta].filter(Boolean).join(' · ') || 'River sync not run') : `Exactly ${esc(p.meta.poolLevel||'—')} ${esc(p.meta.poolUnit||'ft')} ${(p.meta.poolUnit||'ft').includes('%') ? '(Duke full-pond scale)' : (parseFloat(p.meta.poolLevel)<98?'(Drawdown Threat)':'(Lake Level Synced)')}`}</span>
         <span>• <b>Tactical Clarity</b>: Exactly <b style="color:#00e5ff">${esc(p.meta.clarity||'Clear')}</b></span>
         <span>• <b>Solunar Activity</b>: ${solunarAutoRows?solunarAutoRows.split('</td>')[0].replace(/<[^>]*>?/gm, '').trim():'Major Window Active'} — ${moonPhase}</span>
       </div>
@@ -4688,23 +4702,23 @@ ${pressureHtml}
   </div>
 </div>
 
-<h2>1 · Water Conditions &amp; Live Pool Elevation</h2>
+<h2>1 · ${p.meta.waterbodyType==='river'?'River Conditions &amp; Dam Release Safety':'Water Conditions &amp; Live Pool Elevation'}</h2>
 <table>
   <tr><th style="width:28%">Detail</th><th>Telemetry / Readout</th></tr>
   ${p.meta.ramp?`<tr><td>Launch Ramp</td><td>${esc(p.meta.ramp)}</td></tr>`:''}
   <tr><td>Sunrise / Sunset</td><td>${sunriseStr} · ${sunsetStr}</td></tr>
   <tr><td>Moon Phase</td><td>${moonPhase} (${moonIllum}% lit)${moonriseStr!=='--:--'?` · Rise ${moonriseStr} / Set ${moonsetStr}`:''}</td></tr>
   <tr><td>Water Clarity</td><td><span style="display:inline-block;padding:2px 8px;border-radius:4px;background:var(--panel2);color:var(--accent);font-weight:700">${esc(clarity)}</span></td></tr>
-  ${p.meta.waterTemp?`<tr><td>Water Temperature</td><td><b>${esc(p.meta.waterTemp)} °F</b> ${lakeEntry&&lakeEntry.usgs?'<span class="rp-small" style="color:#00e5ff">(USGS Live Monitoring Relay)</span>':''}</td></tr>`:''}
-  ${(p.meta.fullPool || p.meta.poolLevel) ? `<tr><td>Lake Level</td><td><b>${esc(p.meta.poolLevel || '—')} ${esc(p.meta.poolUnit||'ft')}</b> <span class="rp-small">(Current Level)</span> · <b>${esc(p.meta.fullPool || '—')} ${esc(p.meta.poolUnit||'ft')}</b> <span class="rp-small">(Full Pool)</span> ${
+  ${p.meta.waterTemp?`<tr><td>Water Temperature</td><td><b>${esc(p.meta.waterTemp)} °F</b> ${lakeEntry&&lakeEntry.usgs&&p.meta.waterbodyType!=='river'?'<span class="rp-small" style="color:#00e5ff">(USGS Live Monitoring Relay)</span>':''}</td></tr>`:''}
+  ${p.meta.waterbodyType==='river' ? `${p.meta.riverSafety?`<tr><td>Kayak Go / No-Go</td><td><b style="color:${/NO.GO|🛑/i.test(p.meta.riverSafety)?'#c62828':/CAUTION|⚠/i.test(p.meta.riverSafety)?'#e65100':'#2e7d32'}">${esc(p.meta.riverSafety)}</b></td></tr>`:''}${p.meta.riverFlow?`<tr><td>Streamflow</td><td><b>${esc(p.meta.riverFlow)}</b> <span class="rp-small">(USGS real-time)</span></td></tr>`:''}${p.meta.riverGauge?`<tr><td>Gauge Height</td><td><b>${esc(p.meta.riverGauge)}</b></td></tr>`:''}${(p.meta.riverTemp||p.meta.waterTemp)?`<tr><td>Water Temperature</td><td><b>${esc(p.meta.riverTemp||p.meta.waterTemp).replace(/ °F$/,'')} °F</b> <span class="rp-small">(USGS)</span></td></tr>`:''}${p.meta.riverRise?`<tr><td>Rate of Rise</td><td><b>${esc(p.meta.riverRise)}</b></td></tr>`:''}${p.meta.riverSurgeEta?`<tr><td>Surge ETA @ Launch</td><td><b style="color:#e65100">${esc(p.meta.riverSurgeEta)}</b></td></tr>`:''}` : ((p.meta.fullPool || p.meta.poolLevel) ? `<tr><td>Lake Level</td><td><b>${esc(p.meta.poolLevel || '—')} ${esc(p.meta.poolUnit||'ft')}</b> <span class="rp-small">(Current Level)</span> · <b>${esc(p.meta.fullPool || '—')} ${esc(p.meta.poolUnit||'ft')}</b> <span class="rp-small">(Full Pool)</span> ${
     (p.meta.fullPool && p.meta.poolLevel && !isNaN(p.meta.fullPool) && !isNaN(p.meta.poolLevel)) ? `<span style="display:inline-block;margin-left:8px;padding:2px 6px;border-radius:4px;font-size:11px;font-weight:700;background:${parseFloat(p.meta.poolLevel) >= parseFloat(p.meta.fullPool) ? '#e8f5e9;color:#2e7d32' : '#ffebee;color:#c62828'}">${(parseFloat(p.meta.poolLevel) - parseFloat(p.meta.fullPool)).toFixed(1) >= 0 ? `+${(parseFloat(p.meta.poolLevel) - parseFloat(p.meta.fullPool)).toFixed(1)} ${esc(p.meta.poolUnit||'ft')} Above Full Pool` : `${(parseFloat(p.meta.poolLevel) - parseFloat(p.meta.fullPool)).toFixed(1)} ${esc(p.meta.poolUnit||'ft')} Drawdown`}</span>` : ''
-  }</td></tr>` : ''}
+  }</td></tr>` : '')}
   ${p.meta.weather?`<tr><td>Air Temp / Wind Forecast</td><td>${esc(p.meta.weather)}</td></tr>`:''}
 </table>
 
 <div class="rp-callout rp-info">
-  <b>🎯 Tactical Assessment — ${esc(clarity)} Water</b><br>
-  ${tacticalText}
+  <b>🎯 ${p.meta.waterbodyType==='river'?'River Tactical Assessment':'Tactical Assessment'} — ${esc(clarity)} Water</b><br>
+  ${p.meta.waterbodyType==='river' ? 'Prioritize current seams, eddies, safe take-out timing, and dam-release schedule over reservoir-style pool-level tactics.' : tacticalText}
 </div>
 
 <h2>2 · Solunar Timing &amp; Feeding Windows</h2>
@@ -4978,7 +4992,9 @@ function getSelectedPlanRiverRamp(){
   const def = getPlanRiverDef(document.getElementById('planLake')?.value);
   const name = document.getElementById('planRamp')?.value;
   if(!def || !name) return null;
-  return getPlanRiverRamps(def).find(r => r.name === name) || null;
+  return getPlanRiverRamps(def).find(r => r.name === name)
+      || getPlanRiverRamps(def).find(r => r.name.toLowerCase().includes(String(name||'').toLowerCase()) || String(name||'').toLowerCase().includes(r.name.toLowerCase().split(' (')[0]))
+      || null;
 }
 function setLakeOnlyFieldsVisible(show){
   ['planFullPool','planPoolLevel'].forEach(id=>{
@@ -5050,6 +5066,7 @@ document.getElementById('planLake')?.addEventListener('change', e=>{
   setLakeOnlyFieldsVisible(!isRiver);
   populatePlanRampDropdown(v);
   if(isRiver){
+    ['planFullPool','planPoolLevel'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
     const def=getPlanRiverDef(v);
     if(def && MAP_OK) MAP.setView([def.center[0], def.center[1]], def.center[2]||11);
     if(window.syncPlanRiverData) window.syncPlanRiverData();
@@ -5127,7 +5144,9 @@ window.syncPlanRiverData = async function syncPlanRiverData(){
     }
     if(d.user_location){
       scheduleLines.push(`Your selected launch: river mile ${d.user_location.river_mile_from_dam}, nearest ${d.user_location.nearestWaypoint}, surge severity ${d.user_location.surge_severity_label}.`);
-    } else if(!ramp){
+    } else if(ramp){
+      scheduleLines.push(`Selected launch: ${ramp.name}. Worker did not return location-specific surge ETA; verify ramp coordinates / river centerline coverage.`);
+    } else {
       scheduleLines.push('Pick a river ramp/launch to calculate location-specific surge ETA.');
     }
     if(assess.reasons?.length){
