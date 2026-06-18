@@ -887,9 +887,7 @@
                 <button id="btnEmbedPairBle" class="small primary" style="background:var(--accent2);color:#000;font-weight:900;font-family:monospace;box-shadow:0 2px 8px rgba(118,255,3,0.3)" title="Flawlessly pair Web Bluetooth API directly inside TrollMap with XZNY / Smart BMS LiFePO4 battery">
                   <span>⚡</span> Live Web Bluetooth Pair
                 </button>
-                <a href="Module_H_WebBluetooth_Xzny_Bms.html" target="_blank" class="button small" style="background:var(--panel2);color:var(--accent);font-size:11px;text-decoration:none;padding:4px 8px;border-radius:6px;display:inline-flex;align-items:center" title="Open separate full-screen dedicated BLE dashboard in new tab">
-                  Separate Dedicated Hub ↗
-                </a>
+                <!-- Separate app removed - embedded is now primary -->
               </div>
             </div>
             <!-- Live Active Web Bluetooth Telemetry Callout Box -->
@@ -2748,7 +2746,18 @@ document.getElementById('clearImgBtn')?.addEventListener('click',()=>{
   document.getElementById('imgInput').value='';
 });
 
-document.getElementById('imgBtn')?.addEventListener('click',()=>{ ACTIVE_CHART=-1; document.getElementById('imgInput').click(); });
+document.getElementById('imgBtn')?.addEventListener('click', () => {
+  if (CHARTS.length > 0) {
+    // Activate nudge for the most recent saved chart instead of forcing a new import
+    ACTIVE_CHART = CHARTS.length - 1;
+    showNudgeToolbar();
+    setBanner(`Nudge mode for last saved chart — use arrows or buttons`);
+    setTimeout(() => setBanner(''), 2200);
+  } else {
+    ACTIVE_CHART = -1;
+    document.getElementById('imgInput').click();
+  }
+});
 document.getElementById('imgInput')?.addEventListener('change',e=>{
   const f=e.target.files[0]; if(!f) return;
   const r=new FileReader();
@@ -3005,8 +3014,21 @@ function renderChartList(){
   }));
   host.querySelectorAll('[data-ce]').forEach(el=>el.addEventListener('click',e=>{
     ACTIVE_CHART=+e.target.dataset.ce;
-    alert(`Nudge mode: arrow keys / nudge buttons now move "${CHARTS[ACTIVE_CHART].name}". Click ✥ on another to switch, or load a new image to return to normal mode.`);
+    showNudgeToolbar();
+    setBanner(`Nudge mode for "${CHARTS[ACTIVE_CHART].name}" — use arrows or buttons`);
+    setTimeout(() => setBanner(''), 2200);
   }));
+
+  // Also activate nudge toolbar when clicking the chart name/row
+  host.querySelectorAll('span[style*="flex:1"]').forEach((span, idx) => {
+    span.style.cursor = 'pointer';
+    span.addEventListener('click', () => {
+      ACTIVE_CHART = idx;
+      showNudgeToolbar();
+      setBanner(`Nudge mode for "${CHARTS[idx].name}"`);
+      setTimeout(() => setBanner(''), 1800);
+    });
+  });
 }
 
 async function persistCharts(){
@@ -3028,6 +3050,12 @@ async function restoreCharts(){
     const pts=[];
     CHARTS.forEach(c=>{pts.push([c.bounds.north,c.bounds.west]);pts.push([c.bounds.south,c.bounds.east]);});
     if(pts.length && MAP) MAP.fitBounds(pts,{padding:[20,20]});
+
+    // Make nudge toolbar appear for saved charts on reload
+    if (CHARTS.length > 0) {
+      ACTIVE_CHART = CHARTS.length - 1;
+      showNudgeToolbar();
+    }
   } catch(e){}
 }
 
@@ -3041,9 +3069,18 @@ function nudgeTarget(dLat, dLon){
     c.bounds.east+=dLon;  c.bounds.west+=dLon;
     c.overlay.setBounds([[c.bounds.north,c.bounds.west],[c.bounds.south,c.bounds.east]]);
     persistCharts();
+    setBanner(`Nudged ${c.name}`);
+    setTimeout(() => setBanner(''), 1200);
   } else {
     nudgeImage(dLat, dLon);
   }
+}
+
+function showNudgeToolbar() {
+  const toolbar = document.getElementById('toolbarGeorefGroup');
+  const nudge   = document.getElementById('nudgeGroup');
+  if (toolbar) toolbar.style.display = 'flex';
+  if (nudge)   nudge.style.display   = 'flex';
 }
 
 /* ---------- Contour / layer import ---------- */
@@ -4322,18 +4359,42 @@ async function buildPlanPreviewHtml(p){
     usgsHtml = '';
     if(lakeEntry && lakeEntry.usgs){
       try {
-        const {site} = lakeEntry.usgs;
-        const {stage, tempF} = await fetchUSGSData(site);
-        const parts = [];
-        if(tempF !== null){
-          parts.push(`Water temp: <b>${tempF}°F</b>`);
-          if(!p.meta.waterTemp) p.meta.waterTemp = String(tempF);
+        const {site, params} = lakeEntry.usgs;
+        const usgsUrl = `https://waterservices.usgs.gov/nwis/iv/?sites=${site}&parameterCd=${params}&format=json&period=P2D`;
+        const uController = new AbortController();
+        const uTimeoutId = setTimeout(() => uController.abort(), 4000);
+        const ur = await fetch(usgsUrl, { signal: uController.signal });
+        clearTimeout(uTimeoutId);
+        const ud = await ur.json();
+        if(ud && ud.value && ud.value.timeSeries){
+          const series = ud.value.timeSeries;
+          const tempSeries  = series.find(s=>s.variable.variableCode[0].value==='00010');
+          const stageSeries = series.find(s=>s.variable.variableCode[0].value==='00065');
+          let parts = [];
+          if(tempSeries){
+            const vals = tempSeries.values[0].value;
+            const latest = vals[vals.length-1];
+            const tempC = parseFloat(latest.value);
+            const tempF = Math.round(tempC * 9/5 + 32);
+            parts.push(`Water temp: <b>${tempF}°F</b> (${tempC.toFixed(1)}°C)`);
+            // Auto-fill water temp field if empty
+            if(!p.meta.waterTemp) p.meta.waterTemp = String(tempF);
+          }
+          if(stageSeries){
+            const vals = stageSeries.values[0].value;
+            const latest = vals[vals.length-1];
+            const prev   = vals[Math.max(0, vals.length-13)]; // ~3hr ago
+            const stageNow  = parseFloat(latest.value);
+            const stagePrev = parseFloat(prev.value);
+            const diff = stageNow - stagePrev;
+            const trend = diff > 0.05 ? '📈 Rising' : diff < -0.05 ? '📉 Falling' : '➡ Stable';
+            parts.push(`Gauge: <b>${stageNow.toFixed(2)} ft</b> ${trend} (${diff>=0?'+':''}${diff.toFixed(2)} ft / 3hr)`);
+          }
+          if(parts.length){
+            usgsHtml = `<div class="rp-callout rp-info"><b>💧 USGS Live Water Data (site ${site})</b><br>${parts.join(' · ')}<br><span class="rp-small">Data provisional — subject to USGS revision. Duke Energy app may differ for managed lakes.</span></div>`;
+          }
         }
-        if(stage !== null) parts.push(`Gauge: <b>${stage.toFixed(2)} ft</b>`);
-        if(parts.length){
-          usgsHtml = `<div class="rp-callout rp-info"><b>💧 USGS Live Water Data (site ${site})</b><br>${parts.join(' · ')}<br><span class="rp-small">Data provisional — USGS site ${site}. Duke Energy app may differ for managed lakes.</span></div>`;
-        }
-      } catch(e){ usgsHtml = ''; }
+      } catch(e){ usgsHtml = ''; /* USGS optional, fail silently */ }
     }
 
     // GO / NO-GO calculation (needs weather data)
@@ -5428,57 +5489,74 @@ window.sendWptToGenerator = function(lat, lon, target){
 const CF_WORKER_URL = 'https://trollmap-worker.colonal1981.workers.dev';
 
 async function fetchDamLevels(){
-  // Try Duke Energy directly from browser first — their server allows browser requests
-  // but blocks datacenter IPs (Cloudflare Worker ranges)
-  const dukeDirect = await fetchDukeDirect();
-  if(dukeDirect) return dukeDirect;
+  // Prefer Cloudflare Worker /duke proxy (bypasses CORS from GitHub Pages)
+  for (const basin of [1,2,3]) {
+    try {
+      const res = await fetch(`${CF_WORKER_URL}/duke?basin=${basin}`);
+      if (res.ok) {
+        const text = await res.text();
+        const parsed = parseDukeText(text, basin);
+        if (parsed && Object.keys(parsed.duke || {}).length) {
+          return parsed;
+        }
+      }
+    } catch(e){ /* try next basin */ }
+  }
 
-  // Fall back to Worker (useful if Duke adds CORS headers in future)
+  // Last-resort direct fetch (will usually fail due to CORS)
+  return await fetchDukeDirect();
+}
+
+function parseDukeText(text, basinId) {
+  if (!text || text.length < 10) return null;
+
+  let entries = [];
+  const trimmed = text.trim();
   try {
-    const res = await fetch(`${CF_WORKER_URL}/dam-levels`);
-    if(res.ok) return await res.json();
-  } catch(_){}
+    entries = JSON.parse(trimmed.startsWith('[') ? trimmed : `[${trimmed}]`);
+  } catch {
+    entries = [...trimmed.matchAll(/\{[^}]+\}/g)]
+      .map(m => { try { return JSON.parse(m[0]); } catch { return null; } })
+      .filter(Boolean);
+  }
 
-  return null;
+  const lakes = {};
+  for (const lake of entries) {
+    const name = (lake.LakeDisplayName || lake.LakeName || '').toLowerCase().trim();
+    const actual = parseFloat(lake.Actual);
+    if (!name || isNaN(actual)) continue;
+
+    const target = parseFloat(lake.Target);
+    const diff = actual - target;
+
+    lakes[name] = {
+      elevation: actual,
+      target: isNaN(target) ? null : target,
+      min: parseFloat(lake.Min) || null,
+      max: parseFloat(lake.Max) || null,
+      diff: isNaN(diff) ? null : parseFloat(diff.toFixed(2)),
+      trend: isNaN(target) ? 'Unknown'
+             : diff >  0.3 ? 'Above Target'
+             : diff < -0.3 ? 'Below Target'
+             : 'On Target',
+      specialMessage: lake.SpecialMessage?.trim().split('\n')[0] || null,
+      source: 'Duke Energy (via worker)',
+      basin: basinId
+    };
+  }
+  return Object.keys(lakes).length ? { duke: lakes } : null;
 }
 
 async function fetchDukeDirect(){
+  // Direct browser fetch — kept only as fallback (will usually be blocked by CORS)
   const lakes = {};
   for(const basinId of [1,2,3]){
     try {
       const res = await fetch(`https://lakes.duke-energy.com/Data/Lakes/${basinId}.txt`);
       if(!res.ok) continue;
       const text = await res.text();
-      if(!text||text.length<10) continue;
-      let entries = [];
-      const trimmed = text.trim();
-      try {
-        entries = JSON.parse(trimmed.startsWith('[')?trimmed:`[${trimmed}]`);
-      } catch {
-        entries = [...trimmed.matchAll(/\{[^}]+\}/g)]
-          .map(m=>{ try{return JSON.parse(m[0]);}catch{return null;} })
-          .filter(Boolean);
-      }
-      for(const lake of entries){
-        const name = (lake.LakeDisplayName||lake.LakeName||'').toLowerCase().trim();
-        const actual = parseFloat(lake.Actual);
-        const target = parseFloat(lake.Target);
-        if(!name||isNaN(actual)) continue;
-        const diff = actual - target;
-        lakes[name] = {
-          elevation: actual,
-          target:    isNaN(target) ? null : target,
-          min:       parseFloat(lake.Min)||null,
-          max:       parseFloat(lake.Max)||null,
-          diff:      isNaN(diff) ? null : parseFloat(diff.toFixed(2)),
-          trend:     isNaN(target) ? 'Unknown'
-                     : diff >  0.3 ? 'Above Target'
-                     : diff < -0.3 ? 'Below Target'
-                     : 'On Target',
-          specialMessage: lake.SpecialMessage?.trim().split('\n')[0]||null,
-          source: 'Duke Energy',
-        };
-      }
+      const parsed = parseDukeText(text, basinId);
+      if (parsed) Object.assign(lakes, parsed.duke || {});
     } catch(_){}
   }
   return Object.keys(lakes).length ? {duke: lakes} : null;
@@ -5559,8 +5637,8 @@ setTimeout(() => {
     restoreCharts();
     loadSavedSpreads();
     loadCatches();
+    populatePlanLakeDropdown();
   }
-  populatePlanLakeDropdown();
 }, 600);
 
 // Auto-set date
@@ -5999,68 +6077,7 @@ setTimeout(() => {
   }, 1000);
 })();
 
-/* ── USGS Water Data API Configuration ───────────────────────────────────── */
-const USGS_API_KEY = 'ZdbjJoit6u3sm3owtHnxBgO86nCeeHbTFi6BvJaF';
-
-/**
- * Fetch latest USGS water data for a site.
- * Tries new api.waterdata.usgs.gov first (with API key), falls back to legacy waterservices.
- * Returns { stage: ft|null, tempF: degF|null }
- */
-async function fetchUSGSData(siteId, timeoutMs=8000){
-  const result = { stage: null, tempF: null };
-
-  // ── New API (api.waterdata.usgs.gov) ─────────────────────────────────────
-  try {
-    const url = `https://api.waterdata.usgs.gov/ogcapi/v0/collections/latest-continuous/items` +
-      `?monitoring_location_id=USGS-${siteId}&parameter_code=00065,00010&f=json`;
-    const ctrl = new AbortController();
-    const t = setTimeout(()=>ctrl.abort(), timeoutMs);
-    const res = await fetch(url, {
-      signal: ctrl.signal,
-      headers: { 'X-Api-Key': USGS_API_KEY }
-    });
-    clearTimeout(t);
-    if(res.ok){
-      const data = await res.json();
-      if(data?.features?.length){
-        const stageFeat = data.features.find(f=>f.properties?.parameter_code==='00065');
-        const tempFeat  = data.features.find(f=>f.properties?.parameter_code==='00010');
-        if(stageFeat?.properties?.value) result.stage = parseFloat(stageFeat.properties.value);
-        if(tempFeat?.properties?.value)  result.tempF  = Math.round(parseFloat(tempFeat.properties.value)*9/5+32);
-        if(result.stage!==null || result.tempF!==null) return result; // success
-      }
-    }
-  } catch(_){}
-
-  // ── Legacy API fallback (waterservices.usgs.gov — valid until 2027) ──────
-  try {
-    const url = `https://waterservices.usgs.gov/nwis/iv/` +
-      `?sites=${siteId}&parameterCd=00065,00010&format=json&period=P2D`;
-    const ctrl = new AbortController();
-    const t = setTimeout(()=>ctrl.abort(), timeoutMs);
-    const res = await fetch(url, { signal: ctrl.signal });
-    clearTimeout(t);
-    if(res.ok){
-      const data = await res.json();
-      if(data?.value?.timeSeries){
-        const series = data.value.timeSeries;
-        const stg = series.find(s=>s.variable.variableCode[0].value==='00065');
-        if(stg?.values?.[0]?.values?.length){
-          const vals = stg.values[0].values.filter(v=>v.value!=='-999999'&&v.value!=='Ice');
-          if(vals.length) result.stage = parseFloat(vals[vals.length-1].value);
-        }
-        const tmp = series.find(s=>s.variable.variableCode[0].value==='00010');
-        if(tmp?.values?.[0]?.values?.length){
-          const vals = tmp.values[0].values.filter(v=>v.value!=='-999999');
-          if(vals.length) result.tempF = Math.round(parseFloat(vals[vals.length-1].value)*9/5+32);
-        }
-      }
-    }
-  } catch(_){}
-
-  return result;
-}
+/* ── Autonomous Live Utility & USGS Stream Pull Engine (Module F) ── */
 (function initAutonomousUtilityPull(){
   setTimeout(() => {
     const syncBtn = document.getElementById('syncDukeBtn');
@@ -6159,12 +6176,32 @@ async function fetchUSGSData(siteId, timeoutMs=8000){
         let poolResult = NaN;
         let tempResult = NaN;
 
-        // 1. USGS fetch using shared helper (new API + key, falls back to legacy)
+        // 1. If USGS monitoring station ID exists, execute direct wide-open local pull
         const usgsTargetId = feed?.usgsId || lkEntry?.usgs?.site;
         if(usgsTargetId){
-          const {stage, tempF} = await fetchUSGSData(usgsTargetId);
-          if(stage !== null) poolResult = stage;
-          if(tempF  !== null) tempResult = tempF;
+          const usgsUrl = `https://waterservices.usgs.gov/nwis/iv/?sites=${usgsTargetId}&parameterCd=00065,00010&format=json&period=P1D`;
+          const ctrl = new AbortController();
+          const timer = setTimeout(() => ctrl.abort(), 5000);
+          const res = await fetch(usgsUrl, { signal: ctrl.signal });
+          clearTimeout(timer);
+          const data = await res.json();
+
+          if(data?.value?.timeSeries){
+            const series = data.value.timeSeries;
+            // Parameter 00065 (Gauge height / Pool elevation)
+            const stg = series.find(s => s.variable.variableCode[0].value === '00065');
+            if(stg?.values?.[0]?.values?.length){
+              const latest = stg.values[0].values[stg.values[0].values.length - 1];
+              poolResult = parseFloat(latest.value);
+            }
+            // Parameter 00010 (Water temperature)
+            const tmp = series.find(s => s.variable.variableCode[0].value === '00010');
+            if(tmp?.values?.[0]?.values?.length){
+              const latest = tmp.values[0].values[tmp.values[0].values.length - 1];
+              const tempC = parseFloat(latest.value);
+              tempResult = Math.round(tempC * 9/5 + 32); // Convert C exactly to F
+            }
+          }
         }
 
         // 2. Derive or Fallback to Utility Target Full Pool
@@ -6222,14 +6259,8 @@ async function fetchUSGSData(siteId, timeoutMs=8000){
     let gattServer = null;
 
     btnPair.addEventListener('click', async () => {
-      const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
-      if(isStandalone){
-        const openInBrowser = confirm('⚠ Bluetooth requires the browser tab — not the installed app.\n\nChrome restricts Web Bluetooth in standalone PWA mode.\n\nClick OK to open TrollMap in Chrome where Bluetooth works.');
-        if(openInBrowser) window.open(window.location.href, '_blank');
-        return;
-      }
       if(!navigator.bluetooth){
-        alert('Web Bluetooth API is not available.\n\n• Ensure you are on HTTPS.\n• iOS/Safari does not support Web Bluetooth.');
+        alert('Web Bluetooth API is not available or not enabled in this browser.\n\n• Ensure you are serving via HTTPS or localhost.\n• On iOS/iPhone, Apple restricts Web Bluetooth in Safari; use a free app like WebBLE or Bluefy to pair natively.');
         return;
       }
 
@@ -7208,6 +7239,5 @@ if ('serviceWorker' in navigator) {
 
 </script>
 <script defer src="https://static.cloudflareinsights.com/beacon.min.js/v833ccba57c9e4d2798f2e76cebdd09a11778172276447" integrity="sha512-57MDmcccJXYtNnH+ZiBwzC4jb2rvgVCEokYN+L/nLlmO8rfYT/gIpW2A569iJ/3b+0UEasghjuZH/ma3wIs/EQ==" data-cf-beacon='{"version":"2024.11.0","token":"1954b47c125f43f8b4338b3c4f804e4f","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
-<script defer src="https://static.cloudflareinsights.com/beacon.min.js/v833ccba57c9e4d2798f2e76cebdd09a11778172276447" integrity="sha512-57MDmcccJXYtNnH+ZiBwzC4jb2rvgVCEokYN+L/nLlmO8rfYT/gIpW2A569iJ/3b+0UEasghjuZH/ma3wIs/EQ==" data-cf-beacon='{"version":"2024.11.0","token":"1954b47c125f43f8b4338b3c4f804e4f","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
-</body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a0d66a7dbf177bd6',t:'MTc4MTc0NTA0NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
