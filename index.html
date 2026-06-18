@@ -169,12 +169,19 @@
     #main { left: 74px; }
   }
 
-  /* Print plan */
+  /* Print plan/report only — do NOT print every app tab. */
   @media print {
     #topbar, #bottomNav, .no-print { display: none !important; }
-    #main { position: static; overflow:visible; }
-    body { background:#fff; color:#000;}
-    .panel { display:block !important; position:static; overflow:visible;}
+    html, body { height:auto !important; overflow:visible !important; background:#fff !important; color:#000 !important; }
+    #main { position: static !important; overflow:visible !important; inset:auto !important; }
+    .panel { display:none !important; position:static !important; overflow:visible !important; background:#fff !important; }
+    #panel-plan { display:block !important; }
+    #panel-plan .pad { max-width:none !important; padding:0 !important; margin:0 !important; }
+    #panel-plan .subtabs, #plan-builder, #plan-library { display:none !important; }
+    #plan-preview { display:block !important; }
+    #plan-preview .card { border:none !important; background:#fff !important; padding:0 !important; margin:0 !important; }
+    #planPreviewHtml { background:#fff !important; color:#000 !important; }
+    .plan-preview { padding:0 !important; border-radius:0 !important; }
     .card { border:1px solid #ccc; background:#fff;}
   }
 
@@ -5906,9 +5913,14 @@ function parseDukeText(text, basinId) {
       const actual = parseFloat(lake.Actual);
       if (!name || isNaN(actual)) continue;
       const target = parseFloat(lake.Target);
+      const elevMatch = String(lake.Elevation || '').match(/([0-9]+(?:\.[0-9]+)?)/);
+      const fullPool = elevMatch ? parseFloat(elevMatch[1]) : null;
+      const isPercentActual = fullPool && actual <= 100;
       const diff = actual - target;
       lakes[name] = {
-        elevation: actual,
+        elevation: isPercentActual ? (actual/100)*fullPool : actual,
+        percentFull: isPercentActual ? actual : null,
+        fullPool: isNaN(fullPool) ? null : fullPool,
         target: isNaN(target) ? null : target,
         min: parseFloat(lake.Min) || null,
         max: parseFloat(lake.Max) || null,
@@ -6575,22 +6587,22 @@ setTimeout(() => {
     // Mapping of Lake Codes to exact USGS / Utility Intel
     const UTILITY_FEEDS = {
       "Lake Wateree": {
-        utility: "Duke Energy", usgsId: "02148000", normalPool: "225.5", minPool: "223.0",
+        utility: "Duke Energy", usgsId: "02148000", normalPool: "100.0", minPool: "92.5",
         dashUrl: "https://lakes.hydro-derived.duke-energy.app/index.html",
         desc: "Duke Energy manages Lake Wateree pool elevation (authoritative). USGS 02148000 is the river gauge BELOW the dam — used ONLY for water temperature fallback. Never use river stage (00065) as pool level."
       },
       "Lake Wylie": {
-        utility: "Duke Energy", usgsId: "02146000", normalPool: "569.4", minPool: "566.4",
+        utility: "Duke Energy", usgsId: "02146000", normalPool: "100.0", minPool: "92.6",
         dashUrl: "https://lakes.hydro-derived.duke-energy.app/index.html",
         desc: "Duke Energy manages Lake Wylie. Automated browser sync queries live water monitoring feeds."
       },
       "Lake Norman": {
-        utility: "Duke Energy", usgsId: "02142500", normalPool: "760.0", minPool: "755.0",
+        utility: "Duke Energy", usgsId: "02142500", normalPool: "100.0", minPool: "91.0",
         dashUrl: "https://lakes.hydro-derived.duke-energy.app/index.html",
         desc: "Duke Energy manages Lake Norman. Live automated browser sync queries clean stream gauges."
       },
       "Lake Keowee": {
-        utility: "Duke Energy", usgsId: "02063000", normalPool: "800.0", minPool: "796.0",
+        utility: "Duke Energy", usgsId: "02063000", normalPool: "100.0", minPool: "93.0",
         dashUrl: "https://lakes.hydro-derived.duke-energy.app/index.html",
         desc: "Duke Energy operational system. Sync retrieves real-time water conditions."
       },
@@ -6666,10 +6678,9 @@ setTimeout(() => {
         let liveFullPool = null;
 
         // 0. Preferred path: unified worker /lake endpoint. This keeps the
-        // current level and full-pool value in the SAME datum. For Lake Wateree
-        // that means current elevation around 220–226 ft AMSL compared to full
-        // pool around 225.5 ft AMSL — NOT compared to Duke's old 100.0 local
-        // percent/full-pond scale.
+        // current level and full-pool value in the SAME datum. For Duke lakes, the Plan form displays Duke's public % full-pond
+        // scale (Wateree around 97.9, full pool 100.0), even if the worker
+        // internally also knows AMSL feet.
         try {
           const lakeUrl = `${CF_WORKER_URL}/lake?lake=${encodeURIComponent(cleanStr)}`;
           const lr = await fetch(lakeUrl);
@@ -6685,6 +6696,11 @@ setTimeout(() => {
             } else if (typeof lj.display_level === 'number') {
               poolResult = lj.display_level;
               liveFullPool = typeof lj.display_full_pool === 'number' ? lj.display_full_pool : (typeof lj.full_pool_ft === 'number' ? lj.full_pool_ft : liveFullPool);
+            } else if (isDukeLake && typeof lj.elevation_ft === 'number' && typeof lj.full_pool_ft === 'number' && lj.full_pool_ft > 0) {
+              // Compatibility with older worker deployments that only returned
+              // AMSL feet. Convert back to Duke's public % full-pond display.
+              poolResult = (lj.elevation_ft / lj.full_pool_ft) * 100;
+              liveFullPool = 100.0;
             } else if (typeof lj.elevation_ft === 'number') {
               poolResult = lj.elevation_ft;
               if (typeof lj.full_pool_ft === 'number') liveFullPool = lj.full_pool_ft;
@@ -6710,7 +6726,12 @@ setTimeout(() => {
                 const kk = String(k || '').toLowerCase();
                 const matchesSelectedLake = clean.includes(kk) || kk.includes(clean.replace(/^lake\s+/, '').trim());
                 if (matchesSelectedLake) {
-                  if (v && typeof v.elevation === 'number') { if (typeof v.percentFull === 'number') { dukePool = v.percentFull; liveFullPool = 100.0; } else { dukePool = v.elevation; if (typeof v.fullPool === 'number') liveFullPool = v.fullPool; } break; }
+                  if (v && typeof v.elevation === 'number') {
+                    if (typeof v.percentFull === 'number') { dukePool = v.percentFull; liveFullPool = 100.0; }
+                    else if (typeof v.fullPool === 'number' && v.fullPool > 0) { dukePool = (v.elevation / v.fullPool) * 100; liveFullPool = 100.0; }
+                    else { dukePool = v.elevation; if (typeof v.fullPool === 'number') liveFullPool = v.fullPool; }
+                    break;
+                  }
                 }
               }
             }
