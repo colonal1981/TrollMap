@@ -102,6 +102,10 @@ The new **Fishing-Index overlay** is a **non-destructive** layer that:
 - **Murrells Inlet / ICW** = overlapping water under two SCDNR keys
 - **Charleston Harbor inshore** = 8 tidal creek SCDNR keys grouped together
 
+
+### Lake Intelligence Briefing
+The Plan tab now includes a **🧠 Lake Intelligence Briefing** card. It calls the worker route `/lake-intel?lake=...` and combines curated lake profiles with latest available fishing-report scrape snippets where configured. The briefing is saved into the plan and included in the Plan Preview.
+
 ---
 
 ## 📁 Repository File Structure

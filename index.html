@@ -850,6 +850,23 @@
             </div>
           </div>
 
+
+          <!-- Section 2a: Lake Intelligence -->
+          <div class="card plan-section" id="lakeIntelCard">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px">
+              <h4 style="margin:0">🧠 Lake Intelligence Briefing</h4>
+              <div style="display:flex;gap:6px;align-items:center">
+                <button id="syncLakeIntelBtn" class="small primary" title="Build a fisherman-focused lake briefing from curated profile + worker-scraped fishing reports">⚡ Build Lake Intel</button>
+                <span id="lakeIntelStatus" style="font-size:11px;color:var(--muted);font-family:monospace">Ready</span>
+              </div>
+            </div>
+            <p class="muted" style="margin-top:0;line-height:1.4">
+              Generates a lake-specific fisherman report: primary sport fish, stocking notes, invasive/spotted bass pressure, bottom and cover, hazards, seasonal patterns, ramps/strategy, and latest fishing-report scrape when available.
+            </p>
+            <div id="lakeIntelSummary" style="display:none;background:rgba(0,229,255,0.08);border-left:4px solid var(--accent);padding:10px 14px;border-radius:0 8px 8px 0;margin-bottom:10px;font-size:12.5px;line-height:1.45"></div>
+            <textarea id="planLakeIntel" rows="8" placeholder="Click Build Lake Intel after selecting a lake. This text is saved with the plan and included in the preview." style="font-size:12.5px"></textarea>
+          </div>
+
           <!-- Section 2b: Coastal Tides (saltwater trips) -->
           <div class="card plan-section" id="tidesCard">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px">
@@ -1219,7 +1236,7 @@ const LAKE_DB = {
   "Lake Marion, SC": {
     center: [33.55, -80.30, 11],
     bounds: [[33.20, -80.75],[33.82, -80.12]],
-    usgs: {site:"02169921", params:"00010,00065"},
+    usgs: {site:"02169921", params:"00062"}, // Lake Marion reservoir elevation (USGS lake gauge)
     ramps: {
       "Santee State Park": [33.5181, -80.4889],
       "Rimini / Pack's Landing": [33.6706, -80.5367],
@@ -1236,7 +1253,7 @@ const LAKE_DB = {
   "Lake Moultrie, SC": {
     center: [33.28, -80.05, 11],
     bounds: [[33.05, -80.12],[33.50, -79.75]],
-    usgs: {site:"02171700", params:"00065"},
+    usgs: {site:"02172000", params:"00062"}, // Lake Moultrie reservoir elevation (USGS lake gauge)
     ramps: {
       "Short Stay Recreation Area": [33.2425, -79.9926],
       "Bonneau Ferry Ramp": [33.3262, -79.9701],
@@ -1249,7 +1266,7 @@ const LAKE_DB = {
   "Lake Murray, SC": {
     center: [34.08, -81.35, 11],
     bounds: [[33.90, -81.70],[34.20, -81.05]],
-    usgs: {site:"02168500", params:"00065"},
+    usgs: {site:"02168500", params:"00062,62615"}, // Lake Murray reservoir elevation; NOT downstream Saluda River
     ramps: {
       "Hilton Recreation Area": [34.09421, -81.32882],
       "Larry Koon Landing": [34.04694, -81.36083],
@@ -1286,7 +1303,7 @@ const LAKE_DB = {
     center: [35.10, -81.05, 11],
     bounds: [[34.95, -81.20],[35.20, -80.90]],
     duke: 'lake wylie',
-    usgs: {site:"02146000", params:"00065"},
+    // Duke API is authoritative for Lake Wylie pool level; USGS 02146000 is river below dam.
     normalPool: 569.4, minPool: 566.0,
     ramps: {
       "Buster Boyd Access": [35.1026, -81.0366],
@@ -1327,7 +1344,7 @@ const LAKE_DB = {
     center: [34.70, -82.90, 12],
     bounds: [[34.55, -83.05],[34.85, -82.75]],
     duke: 'lake keowee',
-    usgs: {site:"02063000", params:"00065"},
+    // Duke API is authoritative for Lake Keowee pool level. Removed bad legacy USGS 02063000 (VA stream).
     normalPool: 800.0, minPool: 790.0,
     ramps: {
       "South Cove Park": [34.648, -82.918],
@@ -1358,7 +1375,7 @@ const LAKE_DB = {
   "Lake Monticello, SC": {
     center: [34.32, -81.31, 13],
     bounds: [[34.30, -81.42],[34.42, -81.22]],
-    usgs: {site:"02156500", params:"00010,00065"},
+    // No verified live reservoir gauge wired yet; do not use Broad River 02156500 as lake pool.
     dominion: true,
     ramps: {
       "Hwy 215 Public Ramp": [34.3271, -81.2852],
@@ -1369,7 +1386,7 @@ const LAKE_DB = {
   "Parr Reservoir, SC": {
     center: [34.258, -81.337, 13],
     bounds: [[34.22, -81.46],[34.30, -81.28]],
-    usgs: {site:"02160990", params:"00065"},
+    usgs: {site:"02160990", params:"00062"}, // Parr Reservoir elevation
     dominion: true,
     ramps: {
       "Heller's Creek Access": [34.3192, -81.3764],
@@ -1413,7 +1430,7 @@ const LAKE_DB = {
     center: [35.50, -80.95, 11],
     bounds: [[35.35, -81.10],[35.60, -80.80]],
     duke: 'lake norman',
-    usgs: {site:"02142500", params:"00065"},
+    // Duke API is authoritative for Lake Norman pool level; USGS 02142500 is river/stream data.
     normalPool: 760.0, minPool: 745.0,
     ramps: {
       "Blythe Landing": [35.451, -80.952],
@@ -3858,12 +3875,14 @@ function collectPlan(){
       waterTemp: document.getElementById('planWaterTemp').value,
       fullPool: document.getElementById('planFullPool')?.value || '',
       poolLevel: document.getElementById('planPoolLevel')?.value || '',
+      poolUnit: typeof getPlanLakeLevelUnit === 'function' ? getPlanLakeLevelUnit() : 'ft',
       weather: document.getElementById('planWeather').value,
       clarity: document.getElementById('planClarity').value,
       motor: document.getElementById('planMotor').value,
       sonar: document.getElementById('planSonar').value,
       solunar: document.getElementById('planSolunar').value,
       structure: document.getElementById('planStructure').value,
+      lakeIntel: document.getElementById('planLakeIntel')?.value || '',
       species,
     },
     trolling:{
@@ -3910,6 +3929,7 @@ function loadPlanIntoForm(p){
   document.getElementById('planSonar').value = m.sonar || 'Garmin ECHOMAP UHD2 93sv';
   document.getElementById('planSolunar').value = m.solunar||'';
   if(document.getElementById('planStructure')) document.getElementById('planStructure').value = m.structure||'';
+  if(document.getElementById('planLakeIntel')) document.getElementById('planLakeIntel').value = m.lakeIntel||'';
   document.querySelectorAll('#planSpeciesChecks input').forEach(c=> c.checked = (m.species||[]).includes(c.value));
   if(p.trolling){
     document.getElementById('planSpeed').value = p.trolling.speed||'2.4';
@@ -4454,6 +4474,75 @@ async function buildPlanPreviewHtml(p){
       else { goNoGo='GO'; goClass='rp-good'; }
     } catch(e){}
 
+    // Final autonomous trip decision — always produce GO / CAUTION / NO-GO even
+    // when the weather API fails. This folds in weather, lake level, water temp,
+    // closed seasons, and river go/no-go / dam surge data from the Plan form.
+    function addRisk(msg){ if(msg && !noGoReasons.includes(msg)) noGoReasons.push(msg); }
+    function addPositive(msg){ if(msg && !goReasons.includes(msg)) goReasons.push(msg); }
+    const poolVal = parseFloat(p.meta.poolLevel);
+    const fullVal = parseFloat(p.meta.fullPool);
+    const poolUnit = p.meta.poolUnit || 'ft';
+    if(isFinite(poolVal) && isFinite(fullVal)){
+      const diff = poolVal - fullVal;
+      if(String(poolUnit).includes('%')){
+        if(diff <= -8) addRisk(`NO-GO: ${Math.abs(diff).toFixed(1)}% below full pond — severe drawdown / ramp hazard`);
+        else if(diff <= -4) addRisk(`CAUTION: ${Math.abs(diff).toFixed(1)}% below full pond — check ramp depth and shallow hazards`);
+        else if(diff >= 2) addRisk(`CAUTION: ${diff.toFixed(1)}% above full pond — floating debris / flooded shoreline cover`);
+        else addPositive(`Lake level ${poolVal.toFixed(1)}${poolUnit} — within normal operating range`);
+      } else {
+        if(diff <= -10) addRisk(`NO-GO: lake is ${Math.abs(diff).toFixed(1)} ft below full pool — likely ramp/prop hazards`);
+        else if(diff <= -5) addRisk(`CAUTION: lake is ${Math.abs(diff).toFixed(1)} ft below full pool — verify ramps and stump fields`);
+        else if(diff >= 5) addRisk(`NO-GO: lake is ${diff.toFixed(1)} ft above full pool — flood/debris risk`);
+        else if(diff >= 2) addRisk(`CAUTION: lake is ${diff.toFixed(1)} ft above full pool — floating debris / flooded banks`);
+        else addPositive(`Lake level ${poolVal.toFixed(1)} ft — near target pool`);
+      }
+    } else if((p.meta.waterbodyType||'lake') === 'lake'){
+      addRisk('CAUTION: no verified live lake-level source loaded — manually verify ramp depth and pool level');
+    }
+
+    const wt = parseFloat(p.meta.waterTemp);
+    if(isFinite(wt)){
+      if(wt < 45) addRisk(`NO-GO: water temperature ${wt}°F — extreme cold-water capsize risk`);
+      else if(wt < 55) addRisk(`CAUTION: water temperature ${wt}°F — cold-water hypothermia risk; thermal gear required`);
+      else if(wt > 88) addRisk(`CAUTION: water temperature ${wt}°F — heat stress / low dissolved oxygen risk`);
+      else addPositive(`Water temperature ${wt}°F — acceptable`);
+    }
+
+    // If Open-Meteo failed but the weather text field has wind/storm wording, use it.
+    const weatherText = String(p.meta.weather || '').toLowerCase();
+    const windMatch = weatherText.match(/(?:wind|winds|gusts?)?[^0-9]{0,12}(\d{1,2})\s*mph/i);
+    if(windMatch && !goReasons.some(r=>r.toLowerCase().includes('wind')) && !noGoReasons.some(r=>r.toLowerCase().includes('wind'))){
+      const wm = parseInt(windMatch[1],10);
+      if(wm >= 20) addRisk(`NO-GO: wind/gusts ${wm} mph — unsafe kayak/open-water trolling`);
+      else if(wm >= 15) addRisk(`CAUTION: wind/gusts ${wm} mph — stay protected and shorten trip`);
+      else addPositive(`Wind ${wm} mph — acceptable`);
+    }
+    if(/thunder|lightning|severe|storm warning|small craft|advisory/.test(weatherText)){
+      addRisk('NO-GO: weather text includes storm/advisory wording — verify radar before launch');
+    }
+
+    const riverSummary = String(p.meta.riverSummary || '');
+    if(riverSummary){
+      if(/Status:\s*.*NO-GO|🛑|NO GO/i.test(riverSummary)) addRisk('NO-GO: river/dam-release module reports NO-GO conditions');
+      else if(/Status:\s*.*CAUTION|⚠/i.test(riverSummary)) addRisk('CAUTION: river/dam-release module reports elevated risk');
+      else if(/Status:\s*.*GO|✅/i.test(riverSummary)) addPositive('River/dam-release module reports GO conditions');
+      if(/surge arrives|dam surge|scheduled dam release/i.test(riverSummary) && /in\s+(?:[0-9]|[1-9][0-9])\s*min/i.test(riverSummary)){
+        addRisk('NO-GO: dam surge/release is imminent at the selected river location');
+      }
+    }
+
+    if(closedWarning) addRisk('NO-GO: selected target species has a closed-season warning for this waterbody/date');
+
+    const hardRisk = noGoReasons.some(r => /^NO-GO:/i.test(r) || /unsafe|dangerous|lightning|closed-season|imminent|extreme|flood\/debris/i.test(r));
+    const cautionRisk = noGoReasons.length > 0;
+    if(hardRisk || noGoReasons.filter(r=>/^CAUTION:/i.test(r)).length >= 3){ goNoGo='NO-GO'; goClass=''; }
+    else if(cautionRisk){ goNoGo='CAUTION'; goClass='rp-warn'; }
+    else { goNoGo='GO'; goClass='rp-good'; }
+    if(!goReasons.length && !noGoReasons.length){
+      goNoGo='CAUTION'; goClass='rp-warn';
+      addRisk('CAUTION: insufficient live weather/water data — verify manually before launch');
+    }
+
     // USNO Moon rise/set
     try {
       const usnoDate = date.replace(/-/g,'');
@@ -4537,6 +4626,8 @@ ${damHtml}
 
 ${p.meta.riverSummary ? `<div class="rp-callout rp-warn"><b>🌊 River / Dam Release Intel</b><br>${esc(p.meta.riverSummary).replace(/\n/g,'<br>')}</div>` : ''}
 
+${p.meta.lakeIntel ? `<div class="rp-callout rp-info"><b>🧠 Lake Intelligence Briefing</b><br>${esc(p.meta.lakeIntel).replace(/\n/g,'<br>')}</div>` : ''}
+
 ${tidesHtml}
 
 <div class="rp-callout ${goClass}" style="${goNoGo==='NO-GO'?'background:#fff0f0;border-left:5px solid #b3261e':''}">
@@ -4563,7 +4654,7 @@ ${pressureHtml}
       <div style="display:flex;flex-direction:column;gap:5px">
         <span>• <b>Water Temperature</b>: Exactly ${p.meta.waterTemp||'72'}°F</span>
         <span>• <b>Wind Forecast / Gusts</b>: Exactly ${esc(p.meta.weather||'WSW 11 mph')}</span>
-        <span>• <b>Water Level Stage</b>: Exactly ${esc(p.meta.poolLevel||'100.0')} ft ${parseFloat(p.meta.poolLevel)<98?'(Drawdown Threat)':'(Lake Level Synced)'}</span>
+        <span>• <b>Water Level Stage</b>: Exactly ${esc(p.meta.poolLevel||'100.0')} ${esc(p.meta.poolUnit||'ft')} ${(p.meta.poolUnit||'ft').includes('%') ? '(Duke full-pond scale)' : (parseFloat(p.meta.poolLevel)<98?'(Drawdown Threat)':'(Lake Level Synced)')}</span>
         <span>• <b>Tactical Clarity</b>: Exactly <b style="color:#00e5ff">${esc(p.meta.clarity||'Clear')}</b></span>
         <span>• <b>Solunar Activity</b>: ${solunarAutoRows?solunarAutoRows.split('</td>')[0].replace(/<[^>]*>?/gm, '').trim():'Major Window Active'} — ${moonPhase}</span>
       </div>
@@ -4595,8 +4686,8 @@ ${pressureHtml}
   <tr><td>Moon Phase</td><td>${moonPhase} (${moonIllum}% lit)${moonriseStr!=='--:--'?` · Rise ${moonriseStr} / Set ${moonsetStr}`:''}</td></tr>
   <tr><td>Water Clarity</td><td><span style="display:inline-block;padding:2px 8px;border-radius:4px;background:var(--panel2);color:var(--accent);font-weight:700">${esc(clarity)}</span></td></tr>
   ${p.meta.waterTemp?`<tr><td>Water Temperature</td><td><b>${esc(p.meta.waterTemp)} °F</b> ${lakeEntry&&lakeEntry.usgs?'<span class="rp-small" style="color:#00e5ff">(USGS Live Monitoring Relay)</span>':''}</td></tr>`:''}
-  ${(p.meta.fullPool || p.meta.poolLevel) ? `<tr><td>Reservoir Elevation</td><td><b>${esc(p.meta.poolLevel || '—')} ft</b> <span class="rp-small">(Current Level)</span> · <b>${esc(p.meta.fullPool || '—')} ft</b> <span class="rp-small">(Full Pool)</span> ${
-    (p.meta.fullPool && p.meta.poolLevel && !isNaN(p.meta.fullPool) && !isNaN(p.meta.poolLevel)) ? `<span style="display:inline-block;margin-left:8px;padding:2px 6px;border-radius:4px;font-size:11px;font-weight:700;background:${parseFloat(p.meta.poolLevel) >= parseFloat(p.meta.fullPool) ? '#e8f5e9;color:#2e7d32' : '#ffebee;color:#c62828'}">${(parseFloat(p.meta.poolLevel) - parseFloat(p.meta.fullPool)).toFixed(1) >= 0 ? `+${(parseFloat(p.meta.poolLevel) - parseFloat(p.meta.fullPool)).toFixed(1)} ft Above Full Pool` : `${(parseFloat(p.meta.poolLevel) - parseFloat(p.meta.fullPool)).toFixed(1)} ft Drawdown`}</span>` : ''
+  ${(p.meta.fullPool || p.meta.poolLevel) ? `<tr><td>Lake Level</td><td><b>${esc(p.meta.poolLevel || '—')} ${esc(p.meta.poolUnit||'ft')}</b> <span class="rp-small">(Current Level)</span> · <b>${esc(p.meta.fullPool || '—')} ${esc(p.meta.poolUnit||'ft')}</b> <span class="rp-small">(Full Pool)</span> ${
+    (p.meta.fullPool && p.meta.poolLevel && !isNaN(p.meta.fullPool) && !isNaN(p.meta.poolLevel)) ? `<span style="display:inline-block;margin-left:8px;padding:2px 6px;border-radius:4px;font-size:11px;font-weight:700;background:${parseFloat(p.meta.poolLevel) >= parseFloat(p.meta.fullPool) ? '#e8f5e9;color:#2e7d32' : '#ffebee;color:#c62828'}">${(parseFloat(p.meta.poolLevel) - parseFloat(p.meta.fullPool)).toFixed(1) >= 0 ? `+${(parseFloat(p.meta.poolLevel) - parseFloat(p.meta.fullPool)).toFixed(1)} ${esc(p.meta.poolUnit||'ft')} Above Full Pool` : `${(parseFloat(p.meta.poolLevel) - parseFloat(p.meta.fullPool)).toFixed(1)} ${esc(p.meta.poolUnit||'ft')} Drawdown`}</span>` : ''
   }</td></tr>` : ''}
   ${p.meta.weather?`<tr><td>Air Temp / Wind Forecast</td><td>${esc(p.meta.weather)}</td></tr>`:''}
 </table>
@@ -4855,6 +4946,8 @@ const PLAN_RIVERS = [
 window.PLAN_RIVERS = PLAN_RIVERS;
 function isPlanRiverValue(v){ return String(v||'').startsWith('river:'); }
 function getPlanRiverDef(v){ const key=String(v||'').replace(/^river:/,''); return PLAN_RIVERS.find(r=>r.key===key||r.worker===key); }
+function isDukePlanLakeName(v){ const clean=String(v||'').split(',')[0].trim().toLowerCase(); return ['lake wateree','lake wylie','lake norman','lake keowee','lake jocassee','lake hickory','lake james','lake rhodhiss','mountain island'].some(k=>clean.includes(k)||k.includes(clean)); }
+function getPlanLakeLevelUnit(){ return isDukePlanLakeName(document.getElementById('planLake')?.value) ? '% full pond' : 'ft'; }
 function getPlanRiverRamps(def){
   if(!def) return [];
   if(def.fishingSystem && typeof window.getFishingRamps === 'function'){
@@ -5046,6 +5139,71 @@ window.syncPlanRiverData = async function syncPlanRiverData(){
     if(btn) setTimeout(()=>{ btn.style.background=''; btn.style.color=''; }, 1000);
   }
 };
+
+
+window.syncLakeIntelData = async function syncLakeIntelData(){
+  const lakeSel = document.getElementById('planLake');
+  const statusEl = document.getElementById('lakeIntelStatus');
+  const btn = document.getElementById('syncLakeIntelBtn');
+  const out = document.getElementById('planLakeIntel');
+  const summary = document.getElementById('lakeIntelSummary');
+  const lakeVal = lakeSel?.value || '';
+  const label = isPlanRiverValue(lakeVal) ? (getPlanRiverDef(lakeVal)?.label || lakeVal) : lakeVal;
+  const worker = (typeof CF_WORKER_URL !== 'undefined' ? CF_WORKER_URL : (window.CF_WORKER_URL || 'https://trollmap-worker.colonal1981.workers.dev'));
+  function say(msg, bad){ if(statusEl){ statusEl.textContent=msg; statusEl.style.color=bad?'var(--bad)':'var(--accent2)'; } }
+  if(!label){ say('Select waterbody first', true); return null; }
+  if(isPlanRiverValue(lakeVal)){
+    say('Lake intel is lake-focused', true);
+    if(out) out.value = `River selected: ${label}
+Use the river fields above for live dam schedule, streamflow, surge ETA, and kayak Go/No-Go. Lake Intelligence is currently focused on lakes/reservoirs.`;
+    return null;
+  }
+  try{
+    say('Building intel…', false);
+    if(btn){ btn.disabled=true; btn.textContent='⏳ Building…'; }
+    const res = await fetch(`${worker}/lake-intel?lake=${encodeURIComponent(label)}`);
+    if(!res.ok) throw new Error(`Worker HTTP ${res.status}`);
+    const d = await res.json();
+    const p = d.profile || {};
+    const lines=[];
+    lines.push(`${d.lake || label} — Lake Intelligence Briefing`);
+    if(d.confidence && String(d.confidence).includes('generic')) lines.push('VERIFY: No curated lake profile is available yet; this is a research checklist, not confirmed lake intelligence.');
+    lines.push(`Primary sport fish: ${(p.primarySportFish||[]).join(', ') || 'Unknown / verify locally'}`);
+    lines.push(`Known forage: ${(p.forage||[]).join(', ') || 'Unknown'}`);
+    if(p.stocking) lines.push(`Stocking / management: ${p.stocking}`);
+    if(p.spottedBass) lines.push(`Spotted bass / invasive pressure: ${p.spottedBass}`);
+    if(p.habitat) lines.push(`Habitat / cover: ${p.habitat}`);
+    if(p.bottom) lines.push(`Bottom composition: ${p.bottom}`);
+    if(p.hazards) lines.push(`Navigation hazards: ${p.hazards}`);
+    if(p.seasonalPattern) lines.push(`Seasonal pattern: ${p.seasonalPattern}`);
+    if(p.tacticalNotes?.length){ lines.push('Tactical notes:'); p.tacticalNotes.forEach(x=>lines.push(`• ${x}`)); }
+    if(d.latestReport?.summary){
+      lines.push('Latest scraped fishing-report intel (VERIFY — third-party report, may be stale or promotional):');
+      lines.push(d.latestReport.summary);
+    }
+    if(d.sources?.length){ lines.push('Sources / verify links:'); d.sources.forEach(src=>lines.push(`• ${src.label}: ${src.url}`)); }
+    if(out) out.value = lines.join('\n');
+    if(summary){
+      summary.style.display='block';
+      summary.innerHTML = `<b style="color:var(--accent)">🧠 ${esc(d.lake||label)}</b><br><span>${esc((p.primarySportFish||[]).join(', ')||'Profile generated')}</span>${d.confidence&&String(d.confidence).includes('generic')?`<br><span style="color:var(--warn);font-weight:700">⚠ VERIFY: generic/unconfirmed profile</span>`:''}${d.latestReport?.source?`<br><span class="muted">Latest scraped report source — verify before relying: ${esc(d.latestReport.source)}</span>`:''}`;
+    }
+    say('✓ Intel ready', false);
+    window.LAST_LAKE_INTEL = d;
+    return d;
+  } catch(err){
+    console.warn('Lake intel failed', err);
+    say('Intel error', true);
+    if(out) out.value = `Lake Intelligence fetch failed for ${label}: ${err.message}
+Manual checklist: species, forage, stocking, invasive/spotted bass, bottom composition, cover, hazards, recent fishing reports.`;
+    return null;
+  } finally {
+    if(btn){ btn.disabled=false; btn.textContent='⚡ Build Lake Intel'; }
+  }
+};
+
+setTimeout(()=>{
+  document.getElementById('syncLakeIntelBtn')?.addEventListener('click', ()=>window.syncLakeIntelData?.());
+}, 800);
 
 
 document.getElementById('autoNameBtn')?.addEventListener('click',()=>{
@@ -5789,6 +5947,7 @@ function parseDukeText(text, basinId) {
     }
     lakes[key] = {
       elevation: elev,
+      percentFull: (() => { const pm = html.slice(Math.max(0, sm.index), synthRe.lastIndex + 40).match(/[·•]\s*([\d.]+)%/); return pm ? parseFloat(pm[1]) : null; })(),
       fullPool: isNaN(fullPool) ? null : fullPool,
       target: null, min: null, max: null,
       diff: isNaN(fullPool) ? null : parseFloat((elev - fullPool).toFixed(2)),
@@ -6491,8 +6650,8 @@ setTimeout(() => {
         return;
       }
       const cleanStr = lakeStr.split(',')[0].trim();
-      const lKey = Object.keys(UTILITY_FEEDS).find(k => cleanStr.toLowerCase().includes(k.toLowerCase()) || k.toLowerCase().includes(cleanStr.toLowerCase())) || "Lake Wateree";
-      const feed = UTILITY_FEEDS[lKey];
+      const lKey = Object.keys(UTILITY_FEEDS).find(k => cleanStr.toLowerCase().includes(k.toLowerCase()) || k.toLowerCase().includes(cleanStr.toLowerCase())) || (cleanStr ? null : "Lake Wateree");
+      const feed = lKey ? UTILITY_FEEDS[lKey] : null;
       
       // Also look up LAKE_DB stream gauge entry directly
       const lkDbKey = Object.keys(LAKE_DB || {}).find(k => cleanStr.toLowerCase().includes(k.toLowerCase()) || k.toLowerCase().includes(cleanStr.toLowerCase()));
@@ -6516,8 +6675,20 @@ setTimeout(() => {
           const lr = await fetch(lakeUrl);
           if (lr.ok) {
             const lj = await lr.json();
-            if (typeof lj.elevation_ft === 'number') poolResult = lj.elevation_ft;
-            if (typeof lj.full_pool_ft === 'number') liveFullPool = lj.full_pool_ft;
+            const isDukeLake = feed && (feed.utility || '').toLowerCase().includes('duke');
+            if (isDukeLake && typeof lj.percent_full === 'number') {
+              // Duke's public lake-level dashboard reports Actual as % of full pond
+              // (Wateree ~97.9, full pool 100.0). Keep the Plan form in that same
+              // public utility scale, while the worker still retains AMSL ft internally.
+              poolResult = lj.percent_full;
+              liveFullPool = 100.0;
+            } else if (typeof lj.display_level === 'number') {
+              poolResult = lj.display_level;
+              liveFullPool = typeof lj.display_full_pool === 'number' ? lj.display_full_pool : (typeof lj.full_pool_ft === 'number' ? lj.full_pool_ft : liveFullPool);
+            } else if (typeof lj.elevation_ft === 'number') {
+              poolResult = lj.elevation_ft;
+              if (typeof lj.full_pool_ft === 'number') liveFullPool = lj.full_pool_ft;
+            }
             if (typeof lj.water_temperature_F === 'number') tempResult = lj.water_temperature_F;
           }
         } catch(_) {}
@@ -6539,7 +6710,7 @@ setTimeout(() => {
                 const kk = String(k || '').toLowerCase();
                 const matchesSelectedLake = clean.includes(kk) || kk.includes(clean.replace(/^lake\s+/, '').trim());
                 if (matchesSelectedLake) {
-                  if (v && typeof v.elevation === 'number') { dukePool = v.elevation; if (typeof v.fullPool === 'number') liveFullPool = v.fullPool; break; }
+                  if (v && typeof v.elevation === 'number') { if (typeof v.percentFull === 'number') { dukePool = v.percentFull; liveFullPool = 100.0; } else { dukePool = v.elevation; if (typeof v.fullPool === 'number') liveFullPool = v.fullPool; } break; }
                 }
               }
             }
@@ -6572,8 +6743,14 @@ setTimeout(() => {
         }
 
         // 2. Derive or Fallback to Utility Target Full Pool
-        const normalTarget = liveFullPool || feed?.normalPool || lkEntry?.normalPool || "100.0";
-        if(isNaN(poolResult)) poolResult = parseFloat(normalTarget);
+        const normalTarget = liveFullPool || feed?.normalPool || lkEntry?.normalPool || null;
+        if(isNaN(poolResult)) {
+          if(normalTarget != null) poolResult = parseFloat(normalTarget);
+          else {
+            say(`No verified live lake-level source for ${cleanStr || 'this waterbody'}.`, true);
+            return;
+          }
+        }
 
         // Populate active Form input elements
         const fPoolEl = document.getElementById('planFullPool');
@@ -6585,7 +6762,7 @@ setTimeout(() => {
         const wTempEl = document.getElementById('planWaterTemp');
         if(wTempEl && !isNaN(tempResult)) wTempEl.value = tempResult;
 
-        say(`✓ Live pull: ${(!isNaN(poolResult)?poolResult.toFixed(1):'100.0')} ft ${(!isNaN(tempResult)?'· '+tempResult+'°F':'')}`, false);
+        say(`✓ Live pull: ${(!isNaN(poolResult)?poolResult.toFixed(1):'—')} ${typeof getPlanLakeLevelUnit==='function'?getPlanLakeLevelUnit():'ft'} ${(!isNaN(tempResult)?'· '+tempResult+'°F':'')}`, false);
       } catch(err){
         console.warn('Live USGS / Utility sync warning:', err);
         say('Provisional baseline operating curves loaded.', false);
