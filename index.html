@@ -1242,7 +1242,10 @@ const LAKE_DB = {
   "Lake Wateree, SC": {
     center: [34.41, -80.86, 12],
     bounds: [[34.20, -81.05],[34.58, -80.68]],
-    usgs: {site:"02148000", params:"00010,00065"}, // Wateree at Camden (Arena verified)
+    // CRITICAL: USGS 02148000 is the RIVER GAUGE BELOW Wateree Dam.
+    // It is NOT the lake pool level. Duke Energy dashboard is authoritative for pool elevation.
+    // We only request temperature (00010) from USGS. 00065 (river stage) is deliberately excluded.
+    usgs: {site:"02148000", params:"00010"}, 
     ramps: {
       "Clearwater Cove Marina": [34.39880, -80.65930],
       "Lake Wateree State Park": [34.4363, -80.8641],
@@ -4355,12 +4358,18 @@ async function buildPlanPreviewHtml(p){
         </div>`;
     }
 
-    // USGS water temp + gauge height
+    // USGS — only temperature is reliable for most lakes.
+    // For Wateree (and other Duke lakes) the 00065 river gauge is BELOW the dam and is NOT pool level.
+    // We deliberately skip 00065 for Wateree and only show temperature.
     usgsHtml = '';
     if(lakeEntry && lakeEntry.usgs){
       try {
         const {site, params} = lakeEntry.usgs;
-        const usgsUrl = `https://waterservices.usgs.gov/nwis/iv/?sites=${site}&parameterCd=${params}&format=json&period=P2D`;
+        // Always request only temperature to avoid accidentally treating river stage as pool
+        const safeParams = params.includes('00065') && (site === '02148000' || (lakeEntry.name||'').toLowerCase().includes('wateree'))
+          ? '00010' 
+          : params;
+        const usgsUrl = `https://waterservices.usgs.gov/nwis/iv/?sites=${site}&parameterCd=${safeParams}&format=json&period=P2D`;
         const uController = new AbortController();
         const uTimeoutId = setTimeout(() => uController.abort(), 4000);
         const ur = await fetch(usgsUrl, { signal: uController.signal });
@@ -4369,7 +4378,6 @@ async function buildPlanPreviewHtml(p){
         if(ud && ud.value && ud.value.timeSeries){
           const series = ud.value.timeSeries;
           const tempSeries  = series.find(s=>s.variable.variableCode[0].value==='00010');
-          const stageSeries = series.find(s=>s.variable.variableCode[0].value==='00065');
           let parts = [];
           if(tempSeries){
             const vals = tempSeries.values[0].value;
@@ -4380,15 +4388,9 @@ async function buildPlanPreviewHtml(p){
             // Auto-fill water temp field if empty
             if(!p.meta.waterTemp) p.meta.waterTemp = String(tempF);
           }
-          if(stageSeries){
-            const vals = stageSeries.values[0].value;
-            const latest = vals[vals.length-1];
-            const prev   = vals[Math.max(0, vals.length-13)]; // ~3hr ago
-            const stageNow  = parseFloat(latest.value);
-            const stagePrev = parseFloat(prev.value);
-            const diff = stageNow - stagePrev;
-            const trend = diff > 0.05 ? '📈 Rising' : diff < -0.05 ? '📉 Falling' : '➡ Stable';
-            parts.push(`Gauge: <b>${stageNow.toFixed(2)} ft</b> ${trend} (${diff>=0?'+':''}${diff.toFixed(2)} ft / 3hr)`);
+          // Explicit note for Wateree river gauge
+          if (site === '02148000' && (lakeEntry.name||'').toLowerCase().includes('wateree')) {
+            parts.push(`<span class="rp-small" style="color:#c62828">(USGS 02148000 = river below dam — pool level comes from Duke Energy)</span>`);
           }
           if(parts.length){
             usgsHtml = `<div class="rp-callout rp-info"><b>💧 USGS Live Water Data (site ${site})</b><br>${parts.join(' · ')}<br><span class="rp-small">Data provisional — subject to USGS revision. Duke Energy app may differ for managed lakes.</span></div>`;
@@ -5490,6 +5492,7 @@ const CF_WORKER_URL = 'https://trollmap-worker.colonal1981.workers.dev';
 
 async function fetchDamLevels(){
   // Prefer Cloudflare Worker /duke proxy (bypasses CORS from GitHub Pages)
+  // The worker now returns the live HTML dashboard from lakes.hydro-derived.duke-energy.app
   for (const basin of [1,2,3]) {
     try {
       const res = await fetch(`${CF_WORKER_URL}/duke?basin=${basin}`);
@@ -5510,40 +5513,112 @@ async function fetchDamLevels(){
 function parseDukeText(text, basinId) {
   if (!text || text.length < 10) return null;
 
-  let entries = [];
-  const trimmed = text.trim();
-  try {
-    entries = JSON.parse(trimmed.startsWith('[') ? trimmed : `[${trimmed}]`);
-  } catch {
-    entries = [...trimmed.matchAll(/\{[^}]+\}/g)]
-      .map(m => { try { return JSON.parse(m[0]); } catch { return null; } })
-      .filter(Boolean);
-  }
-
   const lakes = {};
-  for (const lake of entries) {
-    const name = (lake.LakeDisplayName || lake.LakeName || '').toLowerCase().trim();
-    const actual = parseFloat(lake.Actual);
-    if (!name || isNaN(actual)) continue;
 
-    const target = parseFloat(lake.Target);
-    const diff = actual - target;
+  // 1. Try old JSON / txt format first (if ever restored)
+  try {
+    let entries = [];
+    const trimmed = text.trim();
+    if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
+      entries = JSON.parse(trimmed.startsWith('[') ? trimmed : `[${trimmed}]`);
+    } else {
+      entries = [...trimmed.matchAll(/\{[^}]+\}/g)]
+        .map(m => { try { return JSON.parse(m[0]); } catch { return null; } })
+        .filter(Boolean);
+    }
+    for (const lake of entries) {
+      const name = (lake.LakeDisplayName || lake.LakeName || '').toLowerCase().trim();
+      const actual = parseFloat(lake.Actual);
+      if (!name || isNaN(actual)) continue;
+      const target = parseFloat(lake.Target);
+      const diff = actual - target;
+      lakes[name] = {
+        elevation: actual,
+        target: isNaN(target) ? null : target,
+        min: parseFloat(lake.Min) || null,
+        max: parseFloat(lake.Max) || null,
+        diff: isNaN(diff) ? null : parseFloat(diff.toFixed(2)),
+        trend: isNaN(target) ? 'Unknown' : diff > 0.3 ? 'Above Target' : diff < -0.3 ? 'Below Target' : 'On Target',
+        specialMessage: lake.SpecialMessage?.trim().split('\n')[0] || null,
+        source: 'Duke Energy (via worker)',
+        basin: basinId
+      };
+    }
+    if (Object.keys(lakes).length) return { duke: lakes };
+  } catch (_) {}
 
-    lakes[name] = {
-      elevation: actual,
-      target: isNaN(target) ? null : target,
-      min: parseFloat(lake.Min) || null,
-      max: parseFloat(lake.Max) || null,
-      diff: isNaN(diff) ? null : parseFloat(diff.toFixed(2)),
-      trend: isNaN(target) ? 'Unknown'
-             : diff >  0.3 ? 'Above Target'
-             : diff < -0.3 ? 'Below Target'
-             : 'On Target',
-      specialMessage: lake.SpecialMessage?.trim().split('\n')[0] || null,
-      source: 'Duke Energy (via worker)',
-      basin: basinId
-    };
+  // 2. Scrape the current live Duke dashboard HTML (lakes.hydro-derived.duke-energy.app)
+  // The page contains lines like:
+  // Lake Wateree · 97.8 · NA · 92.5 · 100 · 2 · View · 05/01/2026 ...
+  // We look for "Lake <Name> · <number>" patterns.
+  const html = text;
+
+  // More tolerant extraction
+  const lakeNameMap = {
+    wateree: 'wateree',
+    norman: 'norman',
+    wylie: 'wylie',
+    keowee: 'keowee',
+    jocassee: 'jocassee',
+    'mountain island': 'mountain island'
+  };
+
+  // Try several common patterns present in the Tailwind dashboard
+  const patterns = [
+    /Lake\s+([A-Za-z\s]+?)\s*[·•]\s*([\d.]+)\s*[·•]/gi,
+    /Lake\s+([A-Za-z\s]+?)\s*[:\-]\s*([\d.]+)\s*(?:ft|feet)?/gi,
+    /"lakeName"\s*:\s*"([^"]+)"[^}]*"level"\s*:\s*([\d.]+)/gi
+  ];
+
+  for (const regex of patterns) {
+    let m;
+    while ((m = regex.exec(html)) !== null) {
+      let rawName = (m[1] || '').trim().toLowerCase();
+      const elev = parseFloat(m[2]);
+      if (!rawName || isNaN(elev)) continue;
+
+      let key = rawName;
+      for (const [frag, canon] of Object.entries(lakeNameMap)) {
+        if (rawName.includes(frag)) { key = canon; break; }
+      }
+
+      if (!lakes[key] || lakes[key].elevation === undefined) {
+        lakes[key] = {
+          elevation: elev,
+          target: null,
+          min: null,
+          max: null,
+          diff: null,
+          trend: 'Live from Duke dashboard',
+          specialMessage: null,
+          source: 'Duke Energy (live dashboard via worker)',
+          basin: basinId
+        };
+      }
+    }
+    if (Object.keys(lakes).length) break;
   }
+
+  // Hard fallback: look for known values in the page text for the main lakes
+  // These are the patterns observed on the live Duke dashboard as of 2026
+  const knownLakes = ['wateree', 'norman', 'wylie', 'keowee', 'mountain island'];
+  for (const kl of knownLakes) {
+    if (!lakes[kl]) {
+      // Look for "Lake Wateree 97.8" or "Wateree · 97.8" or "Wateree: 97.8" etc.
+      const re = new RegExp(kl + '[^0-9]{0,40}([0-9]{2,3}\\.[0-9]{1,2})', 'i');
+      const m = html.match(re);
+      if (m) {
+        lakes[kl] = {
+          elevation: parseFloat(m[1]),
+          target: null, min: null, max: null, diff: null,
+          trend: 'Live (text scan)',
+          source: 'Duke Energy (live dashboard via worker)',
+          basin: basinId
+        };
+      }
+    }
+  }
+
   return Object.keys(lakes).length ? { duke: lakes } : null;
 }
 
@@ -6093,7 +6168,7 @@ setTimeout(() => {
       "Lake Wateree": {
         utility: "Duke Energy", usgsId: "02148000", normalPool: "100.0", minPool: "97.0",
         dashUrl: "https://lakes.hydro-derived.duke-energy.app/index.html",
-        desc: "Duke Energy manages Lake Wateree. Direct automated browser pull connects to USGS monitoring station 02148000 exactly below Wateree Dam."
+        desc: "Duke Energy manages Lake Wateree pool elevation (authoritative). USGS 02148000 is the river gauge BELOW the dam — used ONLY for water temperature fallback. Never use river stage (00065) as pool level."
       },
       "Lake Wylie": {
         utility: "Duke Energy", usgsId: "02146000", normalPool: "100.0", minPool: "97.0",
@@ -6176,32 +6251,47 @@ setTimeout(() => {
         let poolResult = NaN;
         let tempResult = NaN;
 
-        // 1. If USGS monitoring station ID exists, execute direct wide-open local pull
-        const usgsTargetId = feed?.usgsId || lkEntry?.usgs?.site;
-        if(usgsTargetId){
-          const usgsUrl = `https://waterservices.usgs.gov/nwis/iv/?sites=${usgsTargetId}&parameterCd=00065,00010&format=json&period=P1D`;
-          const ctrl = new AbortController();
-          const timer = setTimeout(() => ctrl.abort(), 5000);
-          const res = await fetch(usgsUrl, { signal: ctrl.signal });
-          clearTimeout(timer);
-          const data = await res.json();
+        // 1. Duke lakes: Try the live Duke dashboard first (via worker) — this is the correct reservoir pool elevation.
+        //    USGS river gauges (02148000 etc.) are BELOW the dam and must NEVER be used as pool level.
+        //    We only pull USGS temperature (00010) as fallback.
+        let dukePool = null;
+        if (feed && (feed.utility || '').toLowerCase().includes('duke')) {
+          try {
+            const d = await fetchDamLevels();
+            if (d && d.duke) {
+              const clean = cleanStr.toLowerCase();
+              for (const [k, v] of Object.entries(d.duke)) {
+                if (k.includes('wateree') || k.includes('norman') || k.includes('wylie') || clean.includes(k)) {
+                  if (v && typeof v.elevation === 'number') { dukePool = v.elevation; break; }
+                }
+              }
+            }
+          } catch(_) {}
+        }
 
-          if(data?.value?.timeSeries){
-            const series = data.value.timeSeries;
-            // Parameter 00065 (Gauge height / Pool elevation)
-            const stg = series.find(s => s.variable.variableCode[0].value === '00065');
-            if(stg?.values?.[0]?.values?.length){
-              const latest = stg.values[0].values[stg.values[0].values.length - 1];
-              poolResult = parseFloat(latest.value);
+        const usgsTargetId = feed?.usgsId || lkEntry?.usgs?.site;
+        if (usgsTargetId) {
+          const usgsUrl = `https://waterservices.usgs.gov/nwis/iv/?sites=${usgsTargetId}&parameterCd=00010&format=json&period=P1D`; // temp only
+          try {
+            const ctrl = new AbortController();
+            const timer = setTimeout(() => ctrl.abort(), 4000);
+            const res = await fetch(usgsUrl, { signal: ctrl.signal });
+            clearTimeout(timer);
+            const data = await res.json();
+            if (data?.value?.timeSeries) {
+              const tmp = data.value.timeSeries.find(s => s.variable.variableCode[0].value === '00010');
+              if (tmp?.values?.[0]?.values?.length) {
+                const latest = tmp.values[0].values[tmp.values[0].values.length - 1];
+                const tempC = parseFloat(latest.value);
+                tempResult = Math.round(tempC * 9/5 + 32);
+              }
             }
-            // Parameter 00010 (Water temperature)
-            const tmp = series.find(s => s.variable.variableCode[0].value === '00010');
-            if(tmp?.values?.[0]?.values?.length){
-              const latest = tmp.values[0].values[tmp.values[0].values.length - 1];
-              const tempC = parseFloat(latest.value);
-              tempResult = Math.round(tempC * 9/5 + 32); // Convert C exactly to F
-            }
-          }
+          } catch(_) {}
+        }
+
+        // Prefer real Duke pool if we got one
+        if (dukePool !== null) {
+          poolResult = dukePool;
         }
 
         // 2. Derive or Fallback to Utility Target Full Pool
@@ -7239,5 +7329,6 @@ if ('serviceWorker' in navigator) {
 
 </script>
 <script defer src="https://static.cloudflareinsights.com/beacon.min.js/v833ccba57c9e4d2798f2e76cebdd09a11778172276447" integrity="sha512-57MDmcccJXYtNnH+ZiBwzC4jb2rvgVCEokYN+L/nLlmO8rfYT/gIpW2A569iJ/3b+0UEasghjuZH/ma3wIs/EQ==" data-cf-beacon='{"version":"2024.11.0","token":"1954b47c125f43f8b4338b3c4f804e4f","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a0d66a7dbf177bd6',t:'MTc4MTc0NTA0NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script defer src="https://static.cloudflareinsights.com/beacon.min.js/v833ccba57c9e4d2798f2e76cebdd09a11778172276447" integrity="sha512-57MDmcccJXYtNnH+ZiBwzC4jb2rvgVCEokYN+L/nLlmO8rfYT/gIpW2A569iJ/3b+0UEasghjuZH/ma3wIs/EQ==" data-cf-beacon='{"version":"2024.11.0","token":"1954b47c125f43f8b4338b3c4f804e4f","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
+</body>
 </html>
