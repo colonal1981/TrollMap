@@ -4563,7 +4563,7 @@ ${pressureHtml}
       <div style="display:flex;flex-direction:column;gap:5px">
         <span>• <b>Water Temperature</b>: Exactly ${p.meta.waterTemp||'72'}°F</span>
         <span>• <b>Wind Forecast / Gusts</b>: Exactly ${esc(p.meta.weather||'WSW 11 mph')}</span>
-        <span>• <b>Water Level Stage</b>: Exactly ${esc(p.meta.poolLevel||'100.0')} ft ${parseFloat(p.meta.poolLevel)<98?'(Drawdown Threat)':'(Stable / Full Pool)'}</span>
+        <span>• <b>Water Level Stage</b>: Exactly ${esc(p.meta.poolLevel||'100.0')} ft ${parseFloat(p.meta.poolLevel)<98?'(Drawdown Threat)':'(Lake Level Synced)'}</span>
         <span>• <b>Tactical Clarity</b>: Exactly <b style="color:#00e5ff">${esc(p.meta.clarity||'Clear')}</b></span>
         <span>• <b>Solunar Activity</b>: ${solunarAutoRows?solunarAutoRows.split('</td>')[0].replace(/<[^>]*>?/gm, '').trim():'Major Window Active'} — ${moonPhase}</span>
       </div>
@@ -4596,7 +4596,7 @@ ${pressureHtml}
   <tr><td>Water Clarity</td><td><span style="display:inline-block;padding:2px 8px;border-radius:4px;background:var(--panel2);color:var(--accent);font-weight:700">${esc(clarity)}</span></td></tr>
   ${p.meta.waterTemp?`<tr><td>Water Temperature</td><td><b>${esc(p.meta.waterTemp)} °F</b> ${lakeEntry&&lakeEntry.usgs?'<span class="rp-small" style="color:#00e5ff">(USGS Live Monitoring Relay)</span>':''}</td></tr>`:''}
   ${(p.meta.fullPool || p.meta.poolLevel) ? `<tr><td>Reservoir Elevation</td><td><b>${esc(p.meta.poolLevel || '—')} ft</b> <span class="rp-small">(Current Level)</span> · <b>${esc(p.meta.fullPool || '—')} ft</b> <span class="rp-small">(Full Pool)</span> ${
-    (p.meta.fullPool && p.meta.poolLevel && !isNaN(p.meta.fullPool) && !isNaN(p.meta.poolLevel)) ? `<span style="display:inline-block;margin-left:8px;padding:2px 6px;border-radius:4px;font-size:11px;font-weight:700;background:${parseFloat(p.meta.poolLevel) >= parseFloat(p.meta.fullPool) ? '#e8f5e9;color:#2e7d32' : '#ffebee;color:#c62828'}">${(parseFloat(p.meta.poolLevel) - parseFloat(p.meta.fullPool)).toFixed(1) >= 0 ? `+${(parseFloat(p.meta.poolLevel) - parseFloat(p.meta.fullPool)).toFixed(1)} ft Flooded / Normal Full` : `${(parseFloat(p.meta.poolLevel) - parseFloat(p.meta.fullPool)).toFixed(1)} ft Drawdown`}</span>` : ''
+    (p.meta.fullPool && p.meta.poolLevel && !isNaN(p.meta.fullPool) && !isNaN(p.meta.poolLevel)) ? `<span style="display:inline-block;margin-left:8px;padding:2px 6px;border-radius:4px;font-size:11px;font-weight:700;background:${parseFloat(p.meta.poolLevel) >= parseFloat(p.meta.fullPool) ? '#e8f5e9;color:#2e7d32' : '#ffebee;color:#c62828'}">${(parseFloat(p.meta.poolLevel) - parseFloat(p.meta.fullPool)).toFixed(1) >= 0 ? `+${(parseFloat(p.meta.poolLevel) - parseFloat(p.meta.fullPool)).toFixed(1)} ft Above Full Pool` : `${(parseFloat(p.meta.poolLevel) - parseFloat(p.meta.fullPool)).toFixed(1)} ft Drawdown`}</span>` : ''
   }</td></tr>` : ''}
   ${p.meta.weather?`<tr><td>Air Temp / Wind Forecast</td><td>${esc(p.meta.weather)}</td></tr>`:''}
 </table>
@@ -5770,6 +5770,36 @@ function parseDukeText(text, basinId) {
   // We look for "Lake <Name> · <number>" patterns.
   const html = text;
 
+  // Worker /duke text format synthesized from Duke API:
+  //   Lake Wateree · 220.76 · 97.90% · target 98 · full 225.5
+  // IMPORTANT: first number is current elevation in feet AMSL; `full` is the
+  // matching full-pool elevation. Do not compare the 220-ish ft elevation
+  // against Duke's old 100.0 local-percent datum.
+  const synthRe = /Lake\s+([A-Za-z\s]+?)\s*[·•]\s*([\d.]+)\s*[·•][^\n]*?full\s+([\d.]+)/gi;
+  let sm;
+  while ((sm = synthRe.exec(html)) !== null) {
+    const rawName = (sm[1] || '').trim().toLowerCase();
+    const elev = parseFloat(sm[2]);
+    const fullPool = parseFloat(sm[3]);
+    if (!rawName || isNaN(elev)) continue;
+    let key = rawName;
+    const lakeNameMap0 = { wateree:'wateree', norman:'norman', wylie:'wylie', keowee:'keowee', jocassee:'jocassee', 'mountain island':'mountain island' };
+    for (const [frag, canon] of Object.entries(lakeNameMap0)) {
+      if (rawName.includes(frag)) { key = canon; break; }
+    }
+    lakes[key] = {
+      elevation: elev,
+      fullPool: isNaN(fullPool) ? null : fullPool,
+      target: null, min: null, max: null,
+      diff: isNaN(fullPool) ? null : parseFloat((elev - fullPool).toFixed(2)),
+      trend: isNaN(fullPool) ? 'Live from Duke API' : elev > fullPool + 0.3 ? 'Above Full Pool' : elev < fullPool - 0.3 ? 'Below Full Pool' : 'Near Full Pool',
+      specialMessage: null,
+      source: 'Duke Energy API via worker',
+      basin: basinId
+    };
+  }
+  if (Object.keys(lakes).length) return { duke: lakes };
+
   // More tolerant extraction
   const lakeNameMap = {
     wateree: 'wateree',
@@ -6386,22 +6416,22 @@ setTimeout(() => {
     // Mapping of Lake Codes to exact USGS / Utility Intel
     const UTILITY_FEEDS = {
       "Lake Wateree": {
-        utility: "Duke Energy", usgsId: "02148000", normalPool: "100.0", minPool: "97.0",
+        utility: "Duke Energy", usgsId: "02148000", normalPool: "225.5", minPool: "223.0",
         dashUrl: "https://lakes.hydro-derived.duke-energy.app/index.html",
         desc: "Duke Energy manages Lake Wateree pool elevation (authoritative). USGS 02148000 is the river gauge BELOW the dam — used ONLY for water temperature fallback. Never use river stage (00065) as pool level."
       },
       "Lake Wylie": {
-        utility: "Duke Energy", usgsId: "02146000", normalPool: "100.0", minPool: "97.0",
+        utility: "Duke Energy", usgsId: "02146000", normalPool: "569.4", minPool: "566.4",
         dashUrl: "https://lakes.hydro-derived.duke-energy.app/index.html",
         desc: "Duke Energy manages Lake Wylie. Automated browser sync queries live water monitoring feeds."
       },
       "Lake Norman": {
-        utility: "Duke Energy", usgsId: "02142500", normalPool: "100.0", minPool: "95.0",
+        utility: "Duke Energy", usgsId: "02142500", normalPool: "760.0", minPool: "755.0",
         dashUrl: "https://lakes.hydro-derived.duke-energy.app/index.html",
         desc: "Duke Energy manages Lake Norman. Live automated browser sync queries clean stream gauges."
       },
       "Lake Keowee": {
-        utility: "Duke Energy", usgsId: "02063000", normalPool: "100.0", minPool: "96.0",
+        utility: "Duke Energy", usgsId: "02063000", normalPool: "800.0", minPool: "796.0",
         dashUrl: "https://lakes.hydro-derived.duke-energy.app/index.html",
         desc: "Duke Energy operational system. Sync retrieves real-time water conditions."
       },
@@ -6474,6 +6504,23 @@ setTimeout(() => {
       try {
         let poolResult = NaN;
         let tempResult = NaN;
+        let liveFullPool = null;
+
+        // 0. Preferred path: unified worker /lake endpoint. This keeps the
+        // current level and full-pool value in the SAME datum. For Lake Wateree
+        // that means current elevation around 220–226 ft AMSL compared to full
+        // pool around 225.5 ft AMSL — NOT compared to Duke's old 100.0 local
+        // percent/full-pond scale.
+        try {
+          const lakeUrl = `${CF_WORKER_URL}/lake?lake=${encodeURIComponent(cleanStr)}`;
+          const lr = await fetch(lakeUrl);
+          if (lr.ok) {
+            const lj = await lr.json();
+            if (typeof lj.elevation_ft === 'number') poolResult = lj.elevation_ft;
+            if (typeof lj.full_pool_ft === 'number') liveFullPool = lj.full_pool_ft;
+            if (typeof lj.water_temperature_F === 'number') tempResult = lj.water_temperature_F;
+          }
+        } catch(_) {}
 
         // 1. Duke lakes: Try the live Duke dashboard first (via worker) — this is the correct reservoir pool elevation.
         //    USGS river gauges (02148000 etc.) are BELOW the dam and must NEVER be used as pool level.
@@ -6485,8 +6532,14 @@ setTimeout(() => {
             if (d && d.duke) {
               const clean = cleanStr.toLowerCase();
               for (const [k, v] of Object.entries(d.duke)) {
-                if (k.includes('wateree') || k.includes('norman') || k.includes('wylie') || clean.includes(k)) {
-                  if (v && typeof v.elevation === 'number') { dukePool = v.elevation; break; }
+                // Match ONLY the selected lake. Old code accepted any key that
+                // included wateree/norman/wylie, so a Wateree sync could grab a
+                // different Duke lake level (e.g. ~722.9 ft) if that entry came
+                // first in the parsed dashboard data.
+                const kk = String(k || '').toLowerCase();
+                const matchesSelectedLake = clean.includes(kk) || kk.includes(clean.replace(/^lake\s+/, '').trim());
+                if (matchesSelectedLake) {
+                  if (v && typeof v.elevation === 'number') { dukePool = v.elevation; if (typeof v.fullPool === 'number') liveFullPool = v.fullPool; break; }
                 }
               }
             }
@@ -6519,7 +6572,7 @@ setTimeout(() => {
         }
 
         // 2. Derive or Fallback to Utility Target Full Pool
-        const normalTarget = feed?.normalPool || lkEntry?.normalPool || "100.0";
+        const normalTarget = liveFullPool || feed?.normalPool || lkEntry?.normalPool || "100.0";
         if(isNaN(poolResult)) poolResult = parseFloat(normalTarget);
 
         // Populate active Form input elements

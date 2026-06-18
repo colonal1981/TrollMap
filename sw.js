@@ -1,5 +1,5 @@
 /* TrollMap service worker — modular/lazy-data build */
-const CACHE_NAME = 'trollmap-v11-lazy-2026-06-18';
+const CACHE_NAME = 'trollmap-v11-lazy-level-fix-2026-06-18';
 const CORE_ASSETS = [
   './',
   './index.html',
