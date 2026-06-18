@@ -4446,11 +4446,12 @@ async function buildPlanPreviewHtml(p){
             if(!p.meta.waterTemp) p.meta.waterTemp = String(tempF);
           }
           // Explicit note for Wateree river gauge
-          if (site === '02148000' && (lakeEntry.name||'').toLowerCase().includes('wateree')) {
-            parts.push(`<span class="rp-small" style="color:#c62828">(USGS 02148000 = river below dam — pool level comes from Duke Energy)</span>`);
+          if (site === '02148000' && String(p.meta.lake||'').toLowerCase().includes('wateree')) {
+            parts.push(`<span class="rp-small" style="color:#c62828">(USGS 02148000 = Wateree River below dam — temperature proxy only; lake pool comes from Duke Energy)</span>`);
           }
           if(parts.length){
-            usgsHtml = `<div class="rp-callout rp-info"><b>💧 USGS Live Water Data (site ${site})</b><br>${parts.join(' · ')}<br><span class="rp-small">Data provisional — subject to USGS revision. Duke Energy app may differ for managed lakes.</span></div>`;
+            const usgsTitle = (site === '02148000' && String(p.meta.lake||'').toLowerCase().includes('wateree')) ? '💧 USGS Below-Dam River Temperature Proxy' : `💧 USGS Live Water Data (site ${site})`;
+            usgsHtml = `<div class="rp-callout rp-info"><b>${usgsTitle}</b><br>${parts.join(' · ')}<br><span class="rp-small">Data provisional — subject to USGS revision. Managed-lake pool level may come from a different utility source.</span></div>`;
           }
         }
       } catch(e){ usgsHtml = ''; /* USGS optional, fail silently */ }
@@ -4472,9 +4473,11 @@ async function buildPlanPreviewHtml(p){
       else if(maxPP >= 40) goReasons.push(`Rain chance ${maxPP}% — watch sky, have exit plan`);
       else goReasons.push(`Rain chance ${maxPP}% — low precipitation risk`);
 
-      if(tmaxF >= 98) noGoReasons.push(`Heat ${tmaxF}°F — dangerous heat index on open water`);
-      else if(tmaxF >= 90) goReasons.push(`Heat ${tmaxF}°F — hydrate aggressively, consider early exit`);
+      if(tmaxF >= 98) noGoReasons.push(`NO-GO: heat ${tmaxF}°F — dangerous heat index on open water`);
+      else if(tmaxF >= 90) noGoReasons.push(`CAUTION: heat ${tmaxF}°F — hydrate aggressively, consider early exit`);
       else goReasons.push(`Temp ${tmaxF}°F — comfortable`);
+
+      if(uvMax >= 8) noGoReasons.push(`CAUTION: UV ${uvMax.toFixed ? uvMax.toFixed(1) : uvMax} very high — full sun protection required`);
 
       if(noGoReasons.length >= 2){ goNoGo='NO-GO'; goClass=''; }
       else if(noGoReasons.length === 1){ goNoGo='CAUTION'; goClass='rp-warn'; }
@@ -5184,6 +5187,29 @@ Use the river fields above for live dam schedule, streamflow, surge ETA, and kay
     if(p.hazards) lines.push(`Navigation hazards: ${p.hazards}`);
     if(p.seasonalPattern) lines.push(`Seasonal pattern: ${p.seasonalPattern}`);
     if(p.tacticalNotes?.length){ lines.push('Tactical notes:'); p.tacticalNotes.forEach(x=>lines.push(`• ${x}`)); }
+    if(d.sourceRegistry){
+      lines.push('Source Trust Stack:');
+      const sr=d.sourceRegistry;
+      if(sr.summary) lines.push(`• ${sr.summary.trustModel}`);
+      if(sr.official?.length) lines.push(`• OFFICIAL sources: ${sr.official.map(x=>x.label).join('; ')}`);
+      if(sr.habitat?.length) lines.push(`• OFFICIAL GIS / habitat sources: ${sr.habitat.map(x=>x.label).join('; ')}`);
+      if(sr.reports?.length) lines.push(`• VERIFY fishing-report sources: ${sr.reports.map(x=>x.label).join('; ')}`);
+      if(sr.model?.length) lines.push(`• VERIFY model/aggregate sources: ${sr.model.map(x=>x.label).join('; ')}`);
+    }
+    if(d.lakeMonster){
+      lines.push('LakeMonster supplemental context (VERIFY — third-party/model source, not official):');
+      const lm=[];
+      if(d.lakeMonster.waterTemp_F) lm.push(`surface temp estimate ${d.lakeMonster.waterTemp_F}°F`);
+      if(d.lakeMonster.acreage) lm.push(`${d.lakeMonster.acreage} acres`);
+      if(d.lakeMonster.elevation_ft) lm.push(`${d.lakeMonster.elevation_ft} ft listed elevation`);
+      if(d.lakeMonster.fishSpeciesCount) lm.push(`${d.lakeMonster.fishSpeciesCount} fish species listed`);
+      if(d.lakeMonster.biteRating) lm.push(`bite rating ${d.lakeMonster.biteRating}`);
+      if(d.lakeMonster.wind) lm.push(`wind ${d.lakeMonster.wind}`);
+      if(d.lakeMonster.pressure) lm.push(`pressure ${d.lakeMonster.pressure}`);
+      if(lm.length) lines.push(`• ${lm.join(' · ')}`);
+      if(d.lakeMonster.species?.length) lines.push(`• LakeMonster species mentions: ${d.lakeMonster.species.join(', ')}`);
+      if(d.lakeMonster.context) lines.push(`• ${d.lakeMonster.context}`);
+    }
     if(d.latestReport?.summary){
       lines.push('Latest scraped fishing-report intel (VERIFY — third-party report, may be stale or promotional):');
       lines.push(d.latestReport.summary);

@@ -1,0 +1,332 @@
+{
+  "default": {
+    "official": [
+      {
+        "label": "State fisheries regulations / DNR",
+        "url": "https://www.dnr.sc.gov/fishregs/",
+        "trust": "OFFICIAL"
+      }
+    ],
+    "habitat": [],
+    "reports": [],
+    "model": []
+  },
+  "wateree": {
+    "official": [
+      {
+        "label": "Duke Energy Catawba-Wateree Lake Levels",
+        "url": "https://lakes.hydro-derived.duke-energy.app/",
+        "trust": "OFFICIAL_UTILITY",
+        "use": "pool level / advisories"
+      },
+      {
+        "label": "SCDNR Fishing Regulations",
+        "url": "https://www.dnr.sc.gov/fishregs/",
+        "trust": "OFFICIAL",
+        "use": "seasons, limits, creel rules"
+      },
+      {
+        "label": "USGS Wateree River near Camden 02148000",
+        "url": "https://waterdata.usgs.gov/monitoring-location/02148000/",
+        "trust": "OFFICIAL_PROXY",
+        "use": "below-dam river temp/flow only, not lake pool"
+      }
+    ],
+    "habitat": [
+      {
+        "label": "SCDNR fish attractor / public access GIS",
+        "url": "https://data-scdnr.opendata.arcgis.com/",
+        "trust": "OFFICIAL_GIS",
+        "use": "ramps, public access, attractors when present"
+      }
+    ],
+    "reports": [
+      {
+        "label": "Angler's Headquarters Lake Wateree Fishing Report",
+        "url": "https://www.anglersheadquarters.com/pages/lake-wateree-fishing-report",
+        "trust": "THIRD_PARTY_VERIFY",
+        "use": "surface temp, clarity, bite/pattern report"
+      }
+    ],
+    "model": [
+      {
+        "label": "LakeMonster Lake Wateree",
+        "url": "https://lakemonster.com/lake/SC/Lake-Wateree-water-temperature-1072",
+        "trust": "MODEL_VERIFY",
+        "use": "surface temp estimate, weather, species/context"
+      }
+    ]
+  },
+  "murray": {
+    "official": [
+      {
+        "label": "USGS Lake Murray near Columbia 02168500",
+        "url": "https://waterdata.usgs.gov/monitoring-location/02168500/",
+        "trust": "OFFICIAL",
+        "use": "reservoir elevation"
+      },
+      {
+        "label": "Dominion Energy Lake Murray Management",
+        "url": "https://www.dominionenergy.com/projects-and-facilities/hydroelectric-power/lake-murray",
+        "trust": "OFFICIAL_UTILITY",
+        "use": "lake management / drawdown notices"
+      },
+      {
+        "label": "SCDNR Fishing Regulations",
+        "url": "https://www.dnr.sc.gov/fishregs/",
+        "trust": "OFFICIAL",
+        "use": "seasons and limits"
+      }
+    ],
+    "habitat": [
+      {
+        "label": "SCDNR public access / fish habitat GIS",
+        "url": "https://data-scdnr.opendata.arcgis.com/",
+        "trust": "OFFICIAL_GIS"
+      }
+    ],
+    "reports": [
+      {
+        "label": "Angler's Headquarters Lake Murray Fishing Report",
+        "url": "https://www.anglersheadquarters.com/pages/lake-murray-fishing-report",
+        "trust": "THIRD_PARTY_VERIFY"
+      }
+    ],
+    "model": [
+      {
+        "label": "LakeMonster Lake Murray",
+        "url": "https://lakemonster.com/lake/SC/Lake-Murray-water-temperature-1071",
+        "trust": "MODEL_VERIFY"
+      }
+    ]
+  },
+  "marion": {
+    "official": [
+      {
+        "label": "USGS Lake Marion near Elloree 02169921",
+        "url": "https://waterdata.usgs.gov/monitoring-location/02169921/",
+        "trust": "OFFICIAL",
+        "use": "reservoir elevation"
+      },
+      {
+        "label": "Santee Cooper Lake Data",
+        "url": "https://www.santeecooper.com/community/lakes/lake-data/",
+        "trust": "OFFICIAL_UTILITY",
+        "use": "lake data / rule curve context"
+      },
+      {
+        "label": "SCDNR Fishing Regulations",
+        "url": "https://www.dnr.sc.gov/fishregs/",
+        "trust": "OFFICIAL",
+        "use": "Santee Cooper system rules"
+      }
+    ],
+    "habitat": [
+      {
+        "label": "SCDNR public access / habitat GIS",
+        "url": "https://data-scdnr.opendata.arcgis.com/",
+        "trust": "OFFICIAL_GIS"
+      }
+    ],
+    "reports": [
+      {
+        "label": "Angler's Headquarters Santee Cooper Fishing Report",
+        "url": "https://www.anglersheadquarters.com/pages/santee-cooper-lake-marion-lake-moultrie-fishing-report",
+        "trust": "THIRD_PARTY_VERIFY"
+      }
+    ],
+    "model": []
+  },
+  "moultrie": {
+    "official": [
+      {
+        "label": "USGS Lake Moultrie near Pinopolis 02172000",
+        "url": "https://waterdata.usgs.gov/monitoring-location/02172000/",
+        "trust": "OFFICIAL",
+        "use": "reservoir elevation"
+      },
+      {
+        "label": "Santee Cooper Lake Data",
+        "url": "https://www.santeecooper.com/community/lakes/lake-data/",
+        "trust": "OFFICIAL_UTILITY",
+        "use": "lake data / rule curve context"
+      },
+      {
+        "label": "SCDNR Fishing Regulations",
+        "url": "https://www.dnr.sc.gov/fishregs/",
+        "trust": "OFFICIAL"
+      }
+    ],
+    "habitat": [
+      {
+        "label": "SCDNR public access / habitat GIS",
+        "url": "https://data-scdnr.opendata.arcgis.com/",
+        "trust": "OFFICIAL_GIS"
+      }
+    ],
+    "reports": [
+      {
+        "label": "Angler's Headquarters Santee Cooper Fishing Report",
+        "url": "https://www.anglersheadquarters.com/pages/santee-cooper-lake-marion-lake-moultrie-fishing-report",
+        "trust": "THIRD_PARTY_VERIFY"
+      }
+    ],
+    "model": []
+  },
+  "keowee": {
+    "official": [
+      {
+        "label": "Duke Energy Lake Levels",
+        "url": "https://lakes.hydro-derived.duke-energy.app/",
+        "trust": "OFFICIAL_UTILITY",
+        "use": "pool level / advisories"
+      },
+      {
+        "label": "SCDNR Fishing Regulations",
+        "url": "https://www.dnr.sc.gov/fishregs/",
+        "trust": "OFFICIAL"
+      }
+    ],
+    "habitat": [
+      {
+        "label": "SCDNR public access / habitat GIS",
+        "url": "https://data-scdnr.opendata.arcgis.com/",
+        "trust": "OFFICIAL_GIS"
+      }
+    ],
+    "reports": [
+      {
+        "label": "Angler's Headquarters Lake Keowee Fishing Report",
+        "url": "https://www.anglersheadquarters.com/pages/lake-keowee-fishing-report",
+        "trust": "THIRD_PARTY_VERIFY"
+      }
+    ],
+    "model": [
+      {
+        "label": "LakeMonster Lake Keowee",
+        "url": "https://lakemonster.com/lake/SC/Lake-Keowee-water-temperature-1068",
+        "trust": "MODEL_VERIFY"
+      }
+    ]
+  },
+  "hartwell": {
+    "official": [
+      {
+        "label": "USGS Hartwell Lake 02187010",
+        "url": "https://waterdata.usgs.gov/monitoring-location/02187010/",
+        "trust": "OFFICIAL",
+        "use": "reservoir elevation"
+      },
+      {
+        "label": "USACE Savannah District Lake Levels",
+        "url": "https://water.sas.usace.army.mil/",
+        "trust": "OFFICIAL_FEDERAL",
+        "use": "USACE lake levels"
+      },
+      {
+        "label": "SCDNR / GA DNR Regulations",
+        "url": "https://www.dnr.sc.gov/fishregs/",
+        "trust": "OFFICIAL"
+      }
+    ],
+    "reports": [
+      {
+        "label": "Angler's Headquarters Lake Hartwell Fishing Report",
+        "url": "https://www.anglersheadquarters.com/pages/lake-hartwell-fishing-report",
+        "trust": "THIRD_PARTY_VERIFY"
+      }
+    ],
+    "model": [
+      {
+        "label": "LakeMonster Lake Hartwell",
+        "url": "https://lakemonster.com/lake/GA/Lake-Hartwell-water-temperature-1029",
+        "trust": "MODEL_VERIFY"
+      }
+    ]
+  },
+  "thurmond": {
+    "official": [
+      {
+        "label": "USACE Savannah District Thurmond Lake",
+        "url": "https://water.sas.usace.army.mil/",
+        "trust": "OFFICIAL_FEDERAL",
+        "use": "lake level / ramp context"
+      },
+      {
+        "label": "SCDNR / GA DNR Regulations",
+        "url": "https://www.dnr.sc.gov/fishregs/",
+        "trust": "OFFICIAL"
+      }
+    ],
+    "reports": [
+      {
+        "label": "Angler's Headquarters Clarks Hill Fishing Report",
+        "url": "https://www.anglersheadquarters.com/pages/clarks-hill-lake-thurmond-fishing-report",
+        "trust": "THIRD_PARTY_VERIFY"
+      }
+    ],
+    "model": []
+  },
+  "russell": {
+    "official": [
+      {
+        "label": "USACE Savannah District Russell Lake",
+        "url": "https://water.sas.usace.army.mil/",
+        "trust": "OFFICIAL_FEDERAL",
+        "use": "lake level / project info"
+      },
+      {
+        "label": "SCDNR / GA DNR Regulations",
+        "url": "https://www.dnr.sc.gov/fishregs/",
+        "trust": "OFFICIAL"
+      }
+    ],
+    "reports": [
+      {
+        "label": "Angler's Headquarters Lake Russell Fishing Report",
+        "url": "https://www.anglersheadquarters.com/pages/lake-russell-fishing-report",
+        "trust": "THIRD_PARTY_VERIFY"
+      }
+    ],
+    "model": []
+  },
+  "jocassee": {
+    "official": [
+      {
+        "label": "Duke Energy Lake Levels",
+        "url": "https://lakes.hydro-derived.duke-energy.app/",
+        "trust": "OFFICIAL_UTILITY"
+      },
+      {
+        "label": "SCDNR Fishing Regulations",
+        "url": "https://www.dnr.sc.gov/fishregs/",
+        "trust": "OFFICIAL"
+      }
+    ],
+    "reports": [
+      {
+        "label": "Angler's Headquarters Lake Jocassee Fishing Report",
+        "url": "https://www.anglersheadquarters.com/pages/lake-jocassee-fishing-report",
+        "trust": "THIRD_PARTY_VERIFY"
+      }
+    ],
+    "model": []
+  },
+  "norman": {
+    "official": [
+      {
+        "label": "Duke Energy Lake Levels",
+        "url": "https://lakes.hydro-derived.duke-energy.app/",
+        "trust": "OFFICIAL_UTILITY"
+      }
+    ],
+    "reports": [],
+    "model": [
+      {
+        "label": "LakeMonster Lake Norman",
+        "url": "https://lakemonster.com/lake/NC/Lake-Norman-water-temperature-232",
+        "trust": "MODEL_VERIFY"
+      }
+    ]
+  }
+}
