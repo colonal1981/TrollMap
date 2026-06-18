@@ -4709,7 +4709,7 @@ ${pressureHtml}
   <tr><td>Sunrise / Sunset</td><td>${sunriseStr} · ${sunsetStr}</td></tr>
   <tr><td>Moon Phase</td><td>${moonPhase} (${moonIllum}% lit)${moonriseStr!=='--:--'?` · Rise ${moonriseStr} / Set ${moonsetStr}`:''}</td></tr>
   <tr><td>Water Clarity</td><td><span style="display:inline-block;padding:2px 8px;border-radius:4px;background:var(--panel2);color:var(--accent);font-weight:700">${esc(clarity)}</span></td></tr>
-  ${p.meta.waterTemp?`<tr><td>Water Temperature</td><td><b>${esc(p.meta.waterTemp)} °F</b> ${lakeEntry&&lakeEntry.usgs&&p.meta.waterbodyType!=='river'?'<span class="rp-small" style="color:#00e5ff">(USGS Live Monitoring Relay)</span>':''}</td></tr>`:''}
+  ${p.meta.waterbodyType!=='river' && p.meta.waterTemp?`<tr><td>Water Temperature</td><td><b>${esc(p.meta.waterTemp)} °F</b> ${lakeEntry&&lakeEntry.usgs?'<span class="rp-small" style="color:#00e5ff">(USGS Live Monitoring Relay)</span>':''}</td></tr>`:''}
   ${p.meta.waterbodyType==='river' ? `${p.meta.riverSafety?`<tr><td>Kayak Go / No-Go</td><td><b style="color:${/NO.GO|🛑/i.test(p.meta.riverSafety)?'#c62828':/CAUTION|⚠/i.test(p.meta.riverSafety)?'#e65100':'#2e7d32'}">${esc(p.meta.riverSafety)}</b></td></tr>`:''}${p.meta.riverFlow?`<tr><td>Streamflow</td><td><b>${esc(p.meta.riverFlow)}</b> <span class="rp-small">(USGS real-time)</span></td></tr>`:''}${p.meta.riverGauge?`<tr><td>Gauge Height</td><td><b>${esc(p.meta.riverGauge)}</b></td></tr>`:''}${(p.meta.riverTemp||p.meta.waterTemp)?`<tr><td>Water Temperature</td><td><b>${esc(p.meta.riverTemp||p.meta.waterTemp).replace(/ °F$/,'')} °F</b> <span class="rp-small">(USGS)</span></td></tr>`:''}${p.meta.riverRise?`<tr><td>Rate of Rise</td><td><b>${esc(p.meta.riverRise)}</b></td></tr>`:''}${p.meta.riverSurgeEta?`<tr><td>Surge ETA @ Launch</td><td><b style="color:#e65100">${esc(p.meta.riverSurgeEta)}</b></td></tr>`:''}` : ((p.meta.fullPool || p.meta.poolLevel) ? `<tr><td>Lake Level</td><td><b>${esc(p.meta.poolLevel || '—')} ${esc(p.meta.poolUnit||'ft')}</b> <span class="rp-small">(Current Level)</span> · <b>${esc(p.meta.fullPool || '—')} ${esc(p.meta.poolUnit||'ft')}</b> <span class="rp-small">(Full Pool)</span> ${
     (p.meta.fullPool && p.meta.poolLevel && !isNaN(p.meta.fullPool) && !isNaN(p.meta.poolLevel)) ? `<span style="display:inline-block;margin-left:8px;padding:2px 6px;border-radius:4px;font-size:11px;font-weight:700;background:${parseFloat(p.meta.poolLevel) >= parseFloat(p.meta.fullPool) ? '#e8f5e9;color:#2e7d32' : '#ffebee;color:#c62828'}">${(parseFloat(p.meta.poolLevel) - parseFloat(p.meta.fullPool)).toFixed(1) >= 0 ? `+${(parseFloat(p.meta.poolLevel) - parseFloat(p.meta.fullPool)).toFixed(1)} ${esc(p.meta.poolUnit||'ft')} Above Full Pool` : `${(parseFloat(p.meta.poolLevel) - parseFloat(p.meta.fullPool)).toFixed(1)} ${esc(p.meta.poolUnit||'ft')} Drawdown`}</span>` : ''
   }</td></tr>` : '')}
@@ -5112,8 +5112,26 @@ window.syncPlanRiverData = async function syncPlanRiverData(){
     const d = await res.json();
     const primary = (d.gauges||[]).find(g=>g.primary) || (d.gauges||[])[0] || {};
     const assess = d.kayak_assessment || {};
-    const status = assess.status ? assess.status.toUpperCase() : 'UNKNOWN';
-    const icon = assess.status==='no-go' ? '🛑 ' : assess.status==='caution' ? '⚠️ ' : assess.status==='go' ? '✅ ' : '';
+    let effectiveStatus = assess.status || 'unknown';
+    let tripWindowNote = '';
+    // If the only river concern is a scheduled surge that arrives well after
+    // the planned return time, display it as informational instead of forcing
+    // the whole trip to CAUTION.
+    try {
+      const dateStr = document.getElementById('planDate')?.value;
+      const retStr = document.getElementById('planReturnTime')?.value || '12:00';
+      if(dateStr && d.user_location?.surge_arrival_epoch && effectiveStatus === 'caution'){
+        const tripEnd = new Date(`${dateStr}T${retStr}:00`).getTime();
+        const surgeEpoch = d.user_location.surge_arrival_epoch;
+        const hasOnlySurgeCaution = (assess.reasons||[]).some(r=>/dam surge/i.test(r)) && !(assess.reasons||[]).some(r=>/RAPID RISE|DANGER zone|PUSHY|cold-water/i.test(r));
+        if(hasOnlySurgeCaution && surgeEpoch > tripEnd + 60*60*1000){
+          effectiveStatus = 'go';
+          tripWindowNote = 'Scheduled surge is after planned return window; verify if trip runs late.';
+        }
+      }
+    } catch(_) {}
+    const status = effectiveStatus ? effectiveStatus.toUpperCase() : 'UNKNOWN';
+    const icon = effectiveStatus==='no-go' ? '🛑 ' : effectiveStatus==='caution' ? '⚠️ ' : effectiveStatus==='go' ? '✅ ' : '';
     put('planRiverSafety', icon + status);
     put('planRiverFlow', primary.streamflow_cfs != null ? `${primary.streamflow_cfs} cfs` : '');
     put('planRiverGauge', primary.gage_height_ft != null ? `${primary.gage_height_ft} ft` : '');
@@ -5144,6 +5162,7 @@ window.syncPlanRiverData = async function syncPlanRiverData(){
     }
     if(d.user_location){
       scheduleLines.push(`Your selected launch: river mile ${d.user_location.river_mile_from_dam}, nearest ${d.user_location.nearestWaypoint}, surge severity ${d.user_location.surge_severity_label}.`);
+      if(tripWindowNote) scheduleLines.push(`Trip-window note: ${tripWindowNote}`);
     } else if(ramp){
       scheduleLines.push(`Selected launch: ${ramp.name}. Worker did not return location-specific surge ETA; verify ramp coordinates / river centerline coverage.`);
     } else {
@@ -5156,7 +5175,7 @@ window.syncPlanRiverData = async function syncPlanRiverData(){
     const summary = `${def.label}${ramp?` @ ${ramp.name}`:''}\nStatus: ${icon}${status}\n${scheduleLines.join('\n')}`;
     put('planRiverSchedule', scheduleLines.join('\n'));
     put('planRiverSummary', summary);
-    if(statusEl){ statusEl.textContent=`✓ River synced: ${status}`; statusEl.style.color=assess.status==='no-go'?'var(--bad)':assess.status==='caution'?'var(--warn)':'var(--accent2)'; }
+    if(statusEl){ statusEl.textContent=`✓ River synced: ${status}`; statusEl.style.color=effectiveStatus==='no-go'?'var(--bad)':effectiveStatus==='caution'?'var(--warn)':'var(--accent2)'; }
     window.LAST_PLAN_RIVER_DATA = d;
     return d;
   } catch(err){
