@@ -108,12 +108,19 @@ The new **Fishing-Index overlay** is a **non-destructive** layer that:
 
 ```
 colonal1981.github.io/TrollMap/
- ├── index.html                           # The complete app (v10, everything baked in)
- ├── TrollMap_v8_CarolinaMaster.html      # Legacy redirect — kept for backwards-compat
+ ├── index.html                           # Main app shell + core code
  ├── manifest.json                        # PWA metadata
- ├── sw.js                                # Service worker (offline caching)
- ├── Module_H_WebBluetooth_Xzny_Bms.html  # Standalone BLE battery monitor
- ├── LakeSources.json                     # Tristate GIS reference
+ ├── sw.js                                # Service worker; runtime-caches lazy data
+ ├── js/
+ │   └── lazy-data.js                     # Lazy JSON loader for optional GIS layers
+ ├── icons/
+ │   ├── icon-192.svg                     # PWA icon
+ │   └── icon-512.svg                     # PWA icon
+ ├── data/
+ │   ├── tristate-bank-pier.json          # Loaded only when Bank/Pier is toggled
+ │   ├── tristate-paddle.json             # Loaded only when Kayak is toggled
+ │   └── tristate-hotspots.json           # Loaded only when Attractors/SCDNR habitat needs it
+ ├── trollmap-worker.js                   # Cloudflare worker source copy
  └── README.md                            # This file
 ```
 
@@ -121,14 +128,12 @@ colonal1981.github.io/TrollMap/
 
 ## ⚙️ How to Deploy
 
-1. **Push the updated `index.html`** to the `main` branch of
-   `colonal1981/TrollMap`.
+1. **Push the updated app files** to the `main` branch of
+   `colonal1981/TrollMap`: `index.html`, `manifest.json`, `sw.js`, `js/`, `data/`, and `icons/`.
 2. **GitHub Pages** picks it up automatically in ~60 seconds.
 3. Live app: <https://colonal1981.github.io/TrollMap/>
 
-That's it. v10 is single-file: everything (Plan-tab river integration, fishing-index overlay,
-all the styles and JavaScript) is inlined in `index.html` so the deploy is
-exactly what you've been doing every other time.
+Upload `index.html`, `manifest.json`, `sw.js`, the `js/` folder, and the `data/` folder together. The app is no longer fully single-file: large optional GIS layers are lazy-loaded from JSON so the main HTML is much smaller and easier for agents/editors to handle.
 
 ---
 
