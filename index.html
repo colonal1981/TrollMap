@@ -466,6 +466,7 @@
             <button id="nBig" class="small" title="Fine/coarse step">fine</button>
             <button id="nWide" class="small">↔+</button><button id="nNarrow" class="small">↔−</button>
             <button id="nTall" class="small">↕+</button><button id="nShort" class="small">↕−</button>
+            <button id="nRotL" class="small" title="Rotate chart counter-clockwise">⟲</button><button id="nRotR" class="small" title="Rotate chart clockwise">⟳</button>
           </div>
         </div>
 
@@ -1779,7 +1780,7 @@ const TILES = {
 
 let MAP=null, LAYER=null, BASE=null, BASE_LABELS=null, MAP_OK=false;
 let GPS_WATCH=null, GPS_MARKER=null, FOLLOW_GPS=false, RECORDING=false, GPS_TRACK=[], GPS_LINE=null;
-let IMG_OVERLAY=null, IMG_DATAURL=null, IMG_NATSIZE=null, IMG_BOUNDS=null, GEOREF=null, georefState=null;
+let IMG_OVERLAY=null, IMG_DATAURL=null, IMG_NATSIZE=null, IMG_BOUNDS=null, IMG_ROTATION=0, GEOREF=null, georefState=null;
 let CONTOUR_LAYERS = {}; 
 let SONAR_LAYERS = {}; 
 let pickTarget = null; 
@@ -2806,7 +2807,7 @@ document.getElementById('dropWptBtn')?.addEventListener('click',()=>{
 
 document.getElementById('clearImgBtn')?.addEventListener('click',()=>{
   if(IMG_OVERLAY){ MAP.removeLayer(IMG_OVERLAY); IMG_OVERLAY=null; }
-  IMG_DATAURL=null; IMG_BOUNDS=null; IMG_NATSIZE=null;
+  IMG_DATAURL=null; IMG_BOUNDS=null; IMG_NATSIZE=null; IMG_ROTATION=0;
   georefState=null; ACTIVE_CHART=-1;
   document.getElementById('toolbarGeorefGroup').style.display='none';
   document.getElementById('nudgeGroup').style.display='none';
@@ -2833,6 +2834,7 @@ document.getElementById('imgInput')?.addEventListener('change',e=>{
     const im=new Image(); 
     im.onload=()=>{ 
       IMG_NATSIZE={w:im.width,h:im.height};
+      IMG_ROTATION=0;
       ACTIVE_CHART=-1; // new image targets working overlay
       document.getElementById('toolbarGeorefGroup').style.display='flex';
       placeProvisionalOverlay();
@@ -2861,6 +2863,7 @@ function placeProvisionalOverlay(){
     interactive:false
   }).addTo(MAP);
   IMG_OVERLAY.setZIndex(1);
+  applyOverlayRotation(IMG_OVERLAY, IMG_ROTATION);
   document.getElementById('toolbarGeorefGroup').style.display='flex';
   document.getElementById('nudgeGroup').style.display='flex';
 }
@@ -2891,6 +2894,23 @@ function scaleImage(fLat,fLon){
   IMG_BOUNDS.north=cLat+hLat; IMG_BOUNDS.south=cLat-hLat; 
   IMG_BOUNDS.east=cLon+hLon; IMG_BOUNDS.west=cLon-hLon;
   IMG_OVERLAY.setBounds([[IMG_BOUNDS.north,IMG_BOUNDS.west],[IMG_BOUNDS.south,IMG_BOUNDS.east]]);
+  applyOverlayRotation(IMG_OVERLAY, IMG_ROTATION);
+}
+
+function applyOverlayRotation(overlay, deg){
+  if(!overlay) return;
+  const el = overlay.getElement && overlay.getElement();
+  if(!el) return;
+  // Use the CSS individual transform property so Leaflet can keep controlling
+  // translate/scale while TrollMap adds a small visual rotation on top.
+  el.style.transformOrigin = 'center center';
+  el.style.rotate = `${deg||0}deg`;
+}
+
+function rotateImage(deltaDeg){
+  if(!IMG_OVERLAY) return;
+  IMG_ROTATION = (IMG_ROTATION || 0) + deltaDeg;
+  applyOverlayRotation(IMG_OVERLAY, IMG_ROTATION);
 }
 
 ['nN','nS','nW','nE'].forEach((id,ix)=>{
@@ -2898,10 +2918,12 @@ function scaleImage(fLat,fLon){
   document.getElementById(id).addEventListener('click',()=>nudgeTarget(deltas[ix][0]*step(),deltas[ix][1]*step()));
 });
 document.getElementById('nBig')?.addEventListener('click',e=>{ BIG_STEP=!BIG_STEP; e.target.textContent='step: '+(BIG_STEP?'coarse':'fine'); });
-document.getElementById('nWide')?.addEventListener('click',()=>scaleImage(1,1.01));
-document.getElementById('nNarrow')?.addEventListener('click',()=>scaleImage(1,0.99));
-document.getElementById('nTall')?.addEventListener('click',()=>scaleImage(1.01,1));
-document.getElementById('nShort')?.addEventListener('click',()=>scaleImage(0.99,1));
+document.getElementById('nWide')?.addEventListener('click',()=>scaleTarget(1,1.01));
+document.getElementById('nNarrow')?.addEventListener('click',()=>scaleTarget(1,0.99));
+document.getElementById('nTall')?.addEventListener('click',()=>scaleTarget(1.01,1));
+document.getElementById('nShort')?.addEventListener('click',()=>scaleTarget(0.99,1));
+document.getElementById('nRotL')?.addEventListener('click',()=>rotateTarget(-0.5));
+document.getElementById('nRotR')?.addEventListener('click',()=>rotateTarget(+0.5));
 
 document.getElementById('georefBtn')?.addEventListener('click',()=>{
   if(!IMG_DATAURL){ alert('Load a chart image first'); return; }
@@ -3012,6 +3034,7 @@ function applyGeoref(p){
   }).addTo(MAP);
   
   IMG_OVERLAY.setZIndex(1);
+  applyOverlayRotation(IMG_OVERLAY, IMG_ROTATION);
   MAP.fitBounds([[north,west],[south,east]],{padding:[20,20]});
   document.getElementById('nudgeGroup').style.display='flex';
 }
@@ -3027,10 +3050,12 @@ let ACTIVE_CHART = -1; // -1 = working overlay, >=0 = index in CHARTS[]
 
 function chartBoundsLL(b){ return [[b.north,b.west],[b.south,b.east]]; }
 
-function addChartLayer(name, img, bounds, opacity){
+function addChartLayer(name, img, bounds, opacity, rotation){
+  const rot = rotation || 0;
   const ov = L.imageOverlay(img, chartBoundsLL(bounds), {opacity: opacity!=null?opacity:0.75, interactive:false}).addTo(MAP);
   ov.setZIndex(1);
-  CHARTS.push({name, img, bounds:Object.assign({},bounds), overlay:ov, visible:true, opacity:opacity!=null?opacity:0.75});
+  setTimeout(()=>applyOverlayRotation(ov, rot), 0);
+  CHARTS.push({name, img, bounds:Object.assign({},bounds), overlay:ov, visible:true, opacity:opacity!=null?opacity:0.75, rotation:rot});
   renderChartList();
 }
 
@@ -3040,10 +3065,10 @@ async function commitWorkingChart(){
   if(!name) return;
   // Remove working overlay and re-add as permanent layer
   if(IMG_OVERLAY){ MAP.removeLayer(IMG_OVERLAY); IMG_OVERLAY=null; }
-  addChartLayer(name, IMG_DATAURL, IMG_BOUNDS, document.getElementById('imgOpacity').value/100);
+  addChartLayer(name, IMG_DATAURL, IMG_BOUNDS, document.getElementById('imgOpacity').value/100, IMG_ROTATION);
   await persistCharts();
   // Reset working state so user can load another image
-  IMG_DATAURL=null; IMG_BOUNDS=null; IMG_NATSIZE=null;
+  IMG_DATAURL=null; IMG_BOUNDS=null; IMG_NATSIZE=null; IMG_ROTATION=0;
   document.getElementById('toolbarGeorefGroup').style.display='none';
   document.getElementById('nudgeGroup').style.display='none';
 }
@@ -3105,7 +3130,7 @@ async function persistCharts(){
     // Store each chart individually in the 'charts' store
     const existing = await DB.getAll('charts');
     for(const c of existing) await DB.del('charts', c.name).catch(()=>{});
-    for(const c of CHARTS) await DB.put('charts', {name:c.name, img:c.img, b:c.bounds, opacity:c.opacity});
+    for(const c of CHARTS) await DB.put('charts', {name:c.name, img:c.img, b:c.bounds, opacity:c.opacity, rotation:c.rotation||0});
   } catch(e){ console.warn('Chart persist failed', e); }
 }
 
@@ -3114,7 +3139,7 @@ async function restoreCharts(){
   try {
     const all = await DB.getAll('charts');
     if(!all||!all.length) return;
-    all.forEach(c=>addChartLayer(c.name, c.img, c.b, c.opacity));
+    all.forEach(c=>addChartLayer(c.name, c.img, c.b, c.opacity, c.rotation||0));
     const pts=[];
     CHARTS.forEach(c=>{pts.push([c.bounds.north,c.bounds.west]);pts.push([c.bounds.south,c.bounds.east]);});
     if(pts.length && MAP) MAP.fitBounds(pts,{padding:[20,20]});
@@ -3136,11 +3161,49 @@ function nudgeTarget(dLat, dLon){
     c.bounds.north+=dLat; c.bounds.south+=dLat;
     c.bounds.east+=dLon;  c.bounds.west+=dLon;
     c.overlay.setBounds([[c.bounds.north,c.bounds.west],[c.bounds.south,c.bounds.east]]);
+    applyOverlayRotation(c.overlay, c.rotation||0);
     persistCharts();
     setBanner(`Nudged ${c.name}`);
     setTimeout(() => setBanner(''), 1200);
   } else {
     nudgeImage(dLat, dLon);
+  }
+}
+
+function scaleChartLayer(c, fLat, fLon){
+  const b=c.bounds;
+  const cLat=(b.north+b.south)/2, cLon=(b.east+b.west)/2;
+  const hLat=(b.north-b.south)/2*fLat, hLon=(b.east-b.west)/2*fLon;
+  b.north=cLat+hLat; b.south=cLat-hLat;
+  b.east=cLon+hLon; b.west=cLon-hLon;
+  c.overlay.setBounds([[b.north,b.west],[b.south,b.east]]);
+  applyOverlayRotation(c.overlay, c.rotation||0);
+}
+
+function scaleTarget(fLat, fLon){
+  if(ACTIVE_CHART>=0 && CHARTS[ACTIVE_CHART]){
+    const c=CHARTS[ACTIVE_CHART];
+    scaleChartLayer(c, fLat, fLon);
+    persistCharts();
+    setBanner(`Scaled ${c.name}`);
+    setTimeout(() => setBanner(''), 1200);
+  } else {
+    scaleImage(fLat, fLon);
+  }
+}
+
+function rotateTarget(deltaDeg){
+  if(ACTIVE_CHART>=0 && CHARTS[ACTIVE_CHART]){
+    const c=CHARTS[ACTIVE_CHART];
+    c.rotation=(c.rotation||0)+deltaDeg;
+    applyOverlayRotation(c.overlay, c.rotation);
+    persistCharts();
+    setBanner(`Rotated ${c.name}: ${c.rotation.toFixed(1)}°`);
+    setTimeout(() => setBanner(''), 1200);
+  } else {
+    rotateImage(deltaDeg);
+    setBanner(`Rotated working chart: ${IMG_ROTATION.toFixed(1)}°`);
+    setTimeout(() => setBanner(''), 1200);
   }
 }
 
