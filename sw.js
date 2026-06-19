@@ -1,5 +1,5 @@
 /* TrollMap service worker — modular/lazy-data build */
-const CACHE_NAME = 'trollmap-v13-chart-overlay-rotation-fix-2026-06-19';
+const CACHE_NAME = 'trollmap-v14-chart-affine-3point-fix-2026-06-19';
 const CORE_ASSETS = [
   './',
   './index.html',

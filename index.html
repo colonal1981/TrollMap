@@ -1780,7 +1780,7 @@ const TILES = {
 
 let MAP=null, LAYER=null, BASE=null, BASE_LABELS=null, MAP_OK=false;
 let GPS_WATCH=null, GPS_MARKER=null, FOLLOW_GPS=false, RECORDING=false, GPS_TRACK=[], GPS_LINE=null;
-let IMG_OVERLAY=null, IMG_DATAURL=null, IMG_NATSIZE=null, IMG_BOUNDS=null, IMG_ROTATION=0, GEOREF=null, georefState=null;
+let IMG_OVERLAY=null, IMG_DATAURL=null, IMG_NATSIZE=null, IMG_BOUNDS=null, IMG_ROTATION=0, IMG_AFFINE=null, IMG_AFFINE_PTS=null, GEOREF=null, georefState=null;
 let CONTOUR_LAYERS = {}; 
 let SONAR_LAYERS = {}; 
 let pickTarget = null; 
@@ -2810,7 +2810,8 @@ document.getElementById('dropWptBtn')?.addEventListener('click',()=>{
 
 document.getElementById('clearImgBtn')?.addEventListener('click',()=>{
   if(IMG_OVERLAY){ MAP.removeLayer(IMG_OVERLAY); IMG_OVERLAY=null; }
-  IMG_DATAURL=null; IMG_BOUNDS=null; IMG_NATSIZE=null; IMG_ROTATION=0;
+  if(IMG_AFFINE){ IMG_AFFINE.remove(); IMG_AFFINE=null; }
+  IMG_DATAURL=null; IMG_BOUNDS=null; IMG_NATSIZE=null; IMG_ROTATION=0; IMG_AFFINE_PTS=null;
   georefState=null; ACTIVE_CHART=-1;
   document.getElementById('toolbarGeorefGroup').style.display='none';
   document.getElementById('nudgeGroup').style.display='none';
@@ -2837,7 +2838,8 @@ document.getElementById('imgInput')?.addEventListener('change',e=>{
     const im=new Image(); 
     im.onload=()=>{ 
       IMG_NATSIZE={w:im.width,h:im.height};
-      IMG_ROTATION=0;
+      IMG_ROTATION=0; IMG_AFFINE_PTS=null;
+      if(IMG_AFFINE){ IMG_AFFINE.remove(); IMG_AFFINE=null; }
       ACTIVE_CHART=-1; // new image targets working overlay
       document.getElementById('toolbarGeorefGroup').style.display='flex';
       placeProvisionalOverlay();
@@ -2850,6 +2852,7 @@ document.getElementById('imgInput')?.addEventListener('change',e=>{
 function placeProvisionalOverlay(){
   if(!MAP_OK||!IMG_DATAURL) return;
   if(IMG_OVERLAY){ MAP.removeLayer(IMG_OVERLAY); IMG_OVERLAY=null; }
+  if(IMG_AFFINE){ IMG_AFFINE.remove(); IMG_AFFINE=null; IMG_AFFINE_PTS=null; }
   
   const center=MAP.getCenter();
   const mb=MAP.getBounds();
@@ -2884,6 +2887,12 @@ function nudgeStep(){
 }
 
 function nudgeImage(dLat,dLon){
+  if(IMG_AFFINE && IMG_AFFINE_PTS){
+    IMG_AFFINE_PTS.forEach(p=>{ p.lat+=dLat; p.lon+=dLon; });
+    IMG_AFFINE.pts=IMG_AFFINE_PTS.map(p=>Object.assign({},p));
+    IMG_AFFINE.update();
+    return;
+  }
   if(!IMG_OVERLAY||!IMG_BOUNDS) return;
   IMG_BOUNDS.north+=dLat; IMG_BOUNDS.south+=dLat; 
   IMG_BOUNDS.east+=dLon; IMG_BOUNDS.west+=dLon;
@@ -2891,7 +2900,29 @@ function nudgeImage(dLat,dLon){
   applyOverlayRotation(IMG_OVERLAY, IMG_ROTATION||0);
 }
 
+function transformAffinePts(pts, opts){
+  if(!MAP || !pts || pts.length<3) return pts;
+  const layerPts=pts.map(p=>MAP.latLngToLayerPoint([p.lat,p.lon]));
+  const cx=layerPts.reduce((s,p)=>s+p.x,0)/layerPts.length;
+  const cy=layerPts.reduce((s,p)=>s+p.y,0)/layerPts.length;
+  const sx=opts.sx==null?1:opts.sx, sy=opts.sy==null?1:opts.sy;
+  const ang=(opts.rotateDeg||0)*Math.PI/180;
+  const cos=Math.cos(ang), sin=Math.sin(ang);
+  return pts.map((p,i)=>{
+    let x=(layerPts[i].x-cx)*sx, y=(layerPts[i].y-cy)*sy;
+    const rx=x*cos - y*sin, ry=x*sin + y*cos;
+    const ll=MAP.layerPointToLatLng([cx+rx, cy+ry]);
+    return Object.assign({},p,{lat:ll.lat, lon:ll.lng});
+  });
+}
+
 function scaleImage(fLat,fLon){
+  if(IMG_AFFINE && IMG_AFFINE_PTS){
+    IMG_AFFINE_PTS=transformAffinePts(IMG_AFFINE_PTS,{sx:fLon,sy:fLat});
+    IMG_AFFINE.pts=IMG_AFFINE_PTS.map(p=>Object.assign({},p));
+    IMG_AFFINE.update();
+    return;
+  }
   if(!IMG_OVERLAY||!IMG_BOUNDS) return;
   const cLat=(IMG_BOUNDS.north+IMG_BOUNDS.south)/2, cLon=(IMG_BOUNDS.east+IMG_BOUNDS.west)/2;
   const hLat=(IMG_BOUNDS.north-IMG_BOUNDS.south)/2*fLat, hLon=(IMG_BOUNDS.east-IMG_BOUNDS.west)/2*fLon;
@@ -2918,13 +2949,74 @@ function applyOverlayRotation(overlay, deg){
 function refreshChartOverlayTransforms(){
   try{
     if(IMG_OVERLAY) applyOverlayRotation(IMG_OVERLAY, IMG_ROTATION||0);
+    if(IMG_AFFINE && IMG_AFFINE.update) IMG_AFFINE.update();
     CHARTS.forEach(c=>{
-      if(c && c.overlay && c.visible !== false) applyOverlayRotation(c.overlay, c.rotation||0);
+      if(!c || c.visible === false) return;
+      if(c.type === 'affine' && c.affine && c.affine.update) c.affine.update();
+      else if(c.overlay) applyOverlayRotation(c.overlay, c.rotation||0);
     });
   }catch(e){ console.warn('chart transform refresh failed', e); }
 }
 
+function solveAffineFrom3(src, dst){
+  const [s1,s2,s3]=src, [d1,d2,d3]=dst;
+  const x1=s1.x, y1=s1.y, x2=s2.x, y2=s2.y, x3=s3.x, y3=s3.y;
+  const den = x1*(y2-y3) + x2*(y3-y1) + x3*(y1-y2);
+  if(Math.abs(den) < 0.000001) return null;
+  function coeff(v1,v2,v3){
+    const a = (v1*(y2-y3) + v2*(y3-y1) + v3*(y1-y2)) / den;
+    const c = (v1*(x3-x2) + v2*(x1-x3) + v3*(x2-x1)) / den;
+    const e = (v1*(x2*y3-x3*y2) + v2*(x3*y1-x1*y3) + v3*(x1*y2-x2*y1)) / den;
+    return [a,c,e];
+  }
+  const [a,c,e]=coeff(d1.x,d2.x,d3.x);
+  const [b,d,f]=coeff(d1.y,d2.y,d3.y);
+  return {a,b,c,d,e,f};
+}
+
+function createAffineImageOverlay(img, natSize, pts, opacity){
+  const el=document.createElement('img');
+  el.src=img;
+  el.style.position='absolute';
+  el.style.left='0px'; el.style.top='0px';
+  el.style.width=(natSize?.w||1000)+'px';
+  el.style.height=(natSize?.h||1000)+'px';
+  el.style.transformOrigin='0 0';
+  el.style.pointerEvents='none';
+  el.style.opacity=(opacity!=null?opacity:0.75);
+  el.style.zIndex='1';
+  const pane=MAP.getPanes().overlayPane;
+  pane.appendChild(el);
+  const obj={el,img,natSize:Object.assign({},natSize),pts:pts.map(p=>Object.assign({},p)),opacity:opacity!=null?opacity:0.75,visible:true,
+    update(){
+      if(!MAP || !this.el || !this.pts || this.pts.length<3) return;
+      const w=this.natSize?.w||1000, h=this.natSize?.h||1000;
+      const src=this.pts.slice(0,3).map(p=>({x:p.fx*w,y:p.fy*h}));
+      const dst=this.pts.slice(0,3).map(p=>MAP.latLngToLayerPoint([p.lat,p.lon]));
+      const m=solveAffineFrom3(src,dst);
+      if(!m) return;
+      this.el.style.transform=`matrix(${m.a},${m.b},${m.c},${m.d},${m.e},${m.f})`;
+      this.el.style.opacity=this.opacity;
+    },
+    remove(){ if(this.el && this.el.parentNode) this.el.parentNode.removeChild(this.el); },
+    add(){ if(this.el && !this.el.parentNode) MAP.getPanes().overlayPane.appendChild(this.el); this.update(); }
+  };
+  setTimeout(()=>obj.update(),0);
+  return obj;
+}
+
+function affinePtsBounds(pts){
+  const lats=pts.map(p=>p.lat), lons=pts.map(p=>p.lon);
+  return [[Math.max(...lats), Math.min(...lons)], [Math.min(...lats), Math.max(...lons)]];
+}
+
 function rotateImage(deltaDeg){
+  if(IMG_AFFINE && IMG_AFFINE_PTS){
+    IMG_AFFINE_PTS=transformAffinePts(IMG_AFFINE_PTS,{rotateDeg:deltaDeg});
+    IMG_AFFINE.pts=IMG_AFFINE_PTS.map(p=>Object.assign({},p));
+    IMG_AFFINE.update();
+    return;
+  }
   if(!IMG_OVERLAY) return;
   IMG_ROTATION = (IMG_ROTATION || 0) + deltaDeg;
   applyOverlayRotation(IMG_OVERLAY, IMG_ROTATION);
@@ -2946,7 +3038,7 @@ document.getElementById('georefBtn')?.addEventListener('click',()=>{
   if(!IMG_DATAURL){ alert('Load a chart image first'); return; }
   if(!IMG_OVERLAY) placeProvisionalOverlay();
   georefState={phase:'image',step:1,pts:[]};
-  setBanner('Geo-ref: click POINT 1 on the IMAGE (pick a landmark)…');
+  setBanner('3-point align: click POINT 1 on the IMAGE (pick a landmark)…');
   document.getElementById('map').style.cursor='crosshair';
   document.body.style.cursor='crosshair';
 });
@@ -2976,9 +3068,9 @@ function commitGeorefMapPoint(lat, lon){
     fx:georefState.pendingFx, fy:georefState.pendingFy,
     lat, lon
   });
-  if(georefState.step===1){
-    georefState.step=2; georefState.phase='image';
-    setBanner('Geo-ref: click POINT 2 on the IMAGE (far diagonal corner)…');
+  if(georefState.step < 3){
+    georefState.step += 1; georefState.phase='image';
+    setBanner(`3-point align: click POINT ${georefState.step} on the IMAGE (spread points around the section)…`);
     document.getElementById('map').style.cursor='crosshair';
     document.body.style.cursor='crosshair';
   } else {
@@ -3022,7 +3114,7 @@ function handleGeorefClick(e){
     georefState.pendingFx=fx; georefState.pendingFy=fy;
     // Switch to map phase — show coord box AND allow satellite click
     georefState.phase='map';
-    setBanner(`Pt ${georefState.step}/2: type coords OR click satellite for same spot…`);
+    setBanner(`Pt ${georefState.step}/3: type coords OR click satellite for same spot…`);
     document.getElementById('map').style.cursor='crosshair';
     showGeorefCoordBox(georefState.step);
 
@@ -3034,6 +3126,7 @@ function handleGeorefClick(e){
 }
 
 function applyGeoref(p){
+  if(p && p.length >= 3) return applyAffineGeoref(p);
   const [P1,P2]=p;
   if(P1.fx===P2.fx || P1.fy===P2.fy){ alert('Points too aligned — pick diagonal landmarks.'); return; }
   
@@ -3056,7 +3149,24 @@ function applyGeoref(p){
   document.getElementById('nudgeGroup').style.display='flex';
 }
 
-async function saveCurrentChart(){
+function applyAffineGeoref(p){
+  if(!IMG_DATAURL || !IMG_NATSIZE){ alert('Load a chart image first'); return; }
+  const pts=p.slice(0,3).map(q=>Object.assign({},q));
+  const src=pts.map(q=>({x:q.fx*(IMG_NATSIZE.w||1000), y:q.fy*(IMG_NATSIZE.h||1000)}));
+  const dst=pts.map(q=>MAP.latLngToLayerPoint([q.lat,q.lon]));
+  if(!solveAffineFrom3(src,dst)){ alert('Those 3 points are too close to a straight line. Pick a wider triangle.'); return; }
+  if(IMG_OVERLAY){ MAP.removeLayer(IMG_OVERLAY); IMG_OVERLAY=null; }
+  if(IMG_AFFINE){ IMG_AFFINE.remove(); IMG_AFFINE=null; }
+  IMG_AFFINE_PTS=pts;
+  IMG_AFFINE=createAffineImageOverlay(IMG_DATAURL, IMG_NATSIZE, IMG_AFFINE_PTS, document.getElementById('imgOpacity').value/100);
+  IMG_BOUNDS=null; IMG_ROTATION=0;
+  MAP.fitBounds(affinePtsBounds(IMG_AFFINE_PTS),{padding:[30,30]});
+  document.getElementById('nudgeGroup').style.display='flex';
+  setBanner('3-point chart aligned — use nudge/scale/rotate if needed, then Commit');
+  setTimeout(()=>setBanner(''), 3000);
+}
+
+async function saveCurrentChart(){ 
   // In multi-chart mode this is handled by commitWorkingChart
   commitWorkingChart();
 }
@@ -3072,29 +3182,40 @@ function addChartLayer(name, img, bounds, opacity, rotation){
   const ov = L.imageOverlay(img, chartBoundsLL(bounds), {opacity: opacity!=null?opacity:0.75, interactive:false}).addTo(MAP);
   ov.setZIndex(1);
   setTimeout(()=>applyOverlayRotation(ov, rot), 0);
-  CHARTS.push({name, img, bounds:Object.assign({},bounds), overlay:ov, visible:true, opacity:opacity!=null?opacity:0.75, rotation:rot});
+  CHARTS.push({type:'bounds', name, img, bounds:Object.assign({},bounds), overlay:ov, visible:true, opacity:opacity!=null?opacity:0.75, rotation:rot});
   renderChartList();
 }
 
-async function commitWorkingChart(){
+function addAffineChartLayer(name, img, natSize, pts, opacity){
+  const aff=createAffineImageOverlay(img, natSize, pts, opacity!=null?opacity:0.75);
+  CHARTS.push({type:'affine', name, img, natSize:Object.assign({},natSize), pts:pts.map(p=>Object.assign({},p)), affine:aff, visible:true, opacity:opacity!=null?opacity:0.75});
+  renderChartList();
+}
+
+async function commitWorkingChart(){ 
   // If user is re-nudging an already-committed chart, Commit should save those
   // edits instead of throwing "Load + georeference a chart first".
-  if((!IMG_DATAURL || !IMG_BOUNDS) && ACTIVE_CHART>=0 && CHARTS[ACTIVE_CHART]){
+  if((!IMG_DATAURL || (!IMG_BOUNDS && !IMG_AFFINE_PTS)) && ACTIVE_CHART>=0 && CHARTS[ACTIVE_CHART]){
     await persistCharts();
     refreshChartOverlayTransforms();
     setBanner(`Saved edits to "${CHARTS[ACTIVE_CHART].name}"`);
     setTimeout(() => setBanner(''), 1800);
     return;
   }
-  if(!IMG_DATAURL||!IMG_BOUNDS){ alert('Load + georeference a chart first'); return; }
+  if(!IMG_DATAURL || (!IMG_BOUNDS && !IMG_AFFINE_PTS)){ alert('Load + align a chart first'); return; }
   const name=prompt('Name this chart (e.g. "Wateree North Cove"):', 'Chart '+(CHARTS.length+1));
   if(!name) return;
   // Remove working overlay and re-add as permanent layer
-  if(IMG_OVERLAY){ MAP.removeLayer(IMG_OVERLAY); IMG_OVERLAY=null; }
-  addChartLayer(name, IMG_DATAURL, IMG_BOUNDS, document.getElementById('imgOpacity').value/100, IMG_ROTATION);
+  if(IMG_AFFINE_PTS && IMG_AFFINE){
+    IMG_AFFINE.remove(); IMG_AFFINE=null;
+    addAffineChartLayer(name, IMG_DATAURL, IMG_NATSIZE, IMG_AFFINE_PTS, document.getElementById('imgOpacity').value/100);
+  } else {
+    if(IMG_OVERLAY){ MAP.removeLayer(IMG_OVERLAY); IMG_OVERLAY=null; }
+    addChartLayer(name, IMG_DATAURL, IMG_BOUNDS, document.getElementById('imgOpacity').value/100, IMG_ROTATION);
+  }
   await persistCharts();
   // Reset working state so user can load another image
-  IMG_DATAURL=null; IMG_BOUNDS=null; IMG_NATSIZE=null; IMG_ROTATION=0;
+  IMG_DATAURL=null; IMG_BOUNDS=null; IMG_NATSIZE=null; IMG_ROTATION=0; IMG_AFFINE_PTS=null;
   document.getElementById('toolbarGeorefGroup').style.display='none';
   document.getElementById('nudgeGroup').style.display='none';
 }
@@ -3116,22 +3237,32 @@ function renderChartList(){
     const i=+e.target.dataset.cv;
     CHARTS[i].visible=e.target.checked;
     if(CHARTS[i].visible){
-      CHARTS[i].overlay.addTo(MAP);
-      setTimeout(()=>applyOverlayRotation(CHARTS[i].overlay, CHARTS[i].rotation||0), 0);
+      if(CHARTS[i].type==='affine'){
+        if(CHARTS[i].affine) CHARTS[i].affine.add();
+      } else {
+        CHARTS[i].overlay.addTo(MAP);
+        setTimeout(()=>applyOverlayRotation(CHARTS[i].overlay, CHARTS[i].rotation||0), 0);
+      }
     } else {
-      MAP.removeLayer(CHARTS[i].overlay);
+      if(CHARTS[i].type==='affine') CHARTS[i].affine?.remove();
+      else MAP.removeLayer(CHARTS[i].overlay);
     }
   }));
   host.querySelectorAll('[data-co]').forEach(el=>el.addEventListener('input',e=>{
     const i=+e.target.dataset.co;
     CHARTS[i].opacity=e.target.value/100;
-    CHARTS[i].overlay.setOpacity(CHARTS[i].opacity);
+    if(CHARTS[i].type==='affine'){
+      if(CHARTS[i].affine){ CHARTS[i].affine.opacity=CHARTS[i].opacity; CHARTS[i].affine.update(); }
+    } else {
+      CHARTS[i].overlay.setOpacity(CHARTS[i].opacity);
+    }
     persistCharts();
   }));
   host.querySelectorAll('[data-cd]').forEach(el=>el.addEventListener('click',async e=>{
     const i=+e.target.dataset.cd;
     if(!confirm(`Remove "${CHARTS[i].name}"?`)) return;
-    MAP.removeLayer(CHARTS[i].overlay);
+    if(CHARTS[i].type==='affine') CHARTS[i].affine?.remove();
+    else MAP.removeLayer(CHARTS[i].overlay);
     CHARTS.splice(i,1);
     renderChartList();
     await persistCharts();
@@ -3161,7 +3292,10 @@ async function persistCharts(){
     // Store each chart individually in the 'charts' store
     const existing = await DB.getAll('charts');
     for(const c of existing) await DB.del('charts', c.name).catch(()=>{});
-    for(const c of CHARTS) await DB.put('charts', {name:c.name, img:c.img, b:c.bounds, opacity:c.opacity, rotation:c.rotation||0});
+    for(const c of CHARTS) await DB.put('charts', {
+      type:c.type||'bounds', name:c.name, img:c.img, b:c.bounds,
+      natSize:c.natSize, pts:c.pts, opacity:c.opacity, rotation:c.rotation||0
+    });
   } catch(e){ console.warn('Chart persist failed', e); }
 }
 
@@ -3170,9 +3304,15 @@ async function restoreCharts(){
   try {
     const all = await DB.getAll('charts');
     if(!all||!all.length) return;
-    all.forEach(c=>addChartLayer(c.name, c.img, c.b, c.opacity, c.rotation||0));
+    all.forEach(c=>{
+      if(c.type==='affine' && c.pts && c.natSize) addAffineChartLayer(c.name, c.img, c.natSize, c.pts, c.opacity);
+      else addChartLayer(c.name, c.img, c.b, c.opacity, c.rotation||0);
+    });
     const pts=[];
-    CHARTS.forEach(c=>{pts.push([c.bounds.north,c.bounds.west]);pts.push([c.bounds.south,c.bounds.east]);});
+    CHARTS.forEach(c=>{
+      if(c.type==='affine' && c.pts) c.pts.forEach(p=>pts.push([p.lat,p.lon]));
+      else if(c.bounds){ pts.push([c.bounds.north,c.bounds.west]); pts.push([c.bounds.south,c.bounds.east]); }
+    });
     if(pts.length && MAP) MAP.fitBounds(pts,{padding:[20,20]});
 
     // Make nudge toolbar appear for saved charts on reload
@@ -3189,10 +3329,15 @@ document.getElementById('addChartBtn')?.addEventListener('click', commitWorkingC
 function nudgeTarget(dLat, dLon){
   if(ACTIVE_CHART>=0 && CHARTS[ACTIVE_CHART]){
     const c=CHARTS[ACTIVE_CHART];
-    c.bounds.north+=dLat; c.bounds.south+=dLat;
-    c.bounds.east+=dLon;  c.bounds.west+=dLon;
-    c.overlay.setBounds([[c.bounds.north,c.bounds.west],[c.bounds.south,c.bounds.east]]);
-    applyOverlayRotation(c.overlay, c.rotation||0);
+    if(c.type==='affine'){
+      c.pts.forEach(p=>{ p.lat+=dLat; p.lon+=dLon; });
+      if(c.affine){ c.affine.pts=c.pts.map(p=>Object.assign({},p)); c.affine.update(); }
+    } else {
+      c.bounds.north+=dLat; c.bounds.south+=dLat;
+      c.bounds.east+=dLon;  c.bounds.west+=dLon;
+      c.overlay.setBounds([[c.bounds.north,c.bounds.west],[c.bounds.south,c.bounds.east]]);
+      applyOverlayRotation(c.overlay, c.rotation||0);
+    }
     persistCharts();
     setBanner(`Nudged ${c.name}`);
     setTimeout(() => setBanner(''), 1200);
@@ -3202,6 +3347,11 @@ function nudgeTarget(dLat, dLon){
 }
 
 function scaleChartLayer(c, fLat, fLon){
+  if(c.type==='affine'){
+    c.pts=transformAffinePts(c.pts,{sx:fLon,sy:fLat});
+    if(c.affine){ c.affine.pts=c.pts.map(p=>Object.assign({},p)); c.affine.update(); }
+    return;
+  }
   const b=c.bounds;
   const cLat=(b.north+b.south)/2, cLon=(b.east+b.west)/2;
   const hLat=(b.north-b.south)/2*fLat, hLon=(b.east-b.west)/2*fLon;
@@ -3226,10 +3376,17 @@ function scaleTarget(fLat, fLon){
 function rotateTarget(deltaDeg){
   if(ACTIVE_CHART>=0 && CHARTS[ACTIVE_CHART]){
     const c=CHARTS[ACTIVE_CHART];
-    c.rotation=(c.rotation||0)+deltaDeg;
-    applyOverlayRotation(c.overlay, c.rotation);
-    persistCharts();
-    setBanner(`Rotated ${c.name}: ${c.rotation.toFixed(1)}°`);
+    if(c.type==='affine'){
+      c.pts=transformAffinePts(c.pts,{rotateDeg:deltaDeg});
+      if(c.affine){ c.affine.pts=c.pts.map(p=>Object.assign({},p)); c.affine.update(); }
+      persistCharts();
+      setBanner(`Rotated ${c.name}`);
+    } else {
+      c.rotation=(c.rotation||0)+deltaDeg;
+      applyOverlayRotation(c.overlay, c.rotation);
+      persistCharts();
+      setBanner(`Rotated ${c.name}: ${c.rotation.toFixed(1)}°`);
+    }
     setTimeout(() => setBanner(''), 1200);
   } else {
     rotateImage(deltaDeg);
