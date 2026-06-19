@@ -2505,6 +2505,9 @@ function initMap(){
     const el=document.getElementById('coordReadout2');
     if(el) el.textContent=`${e.latlng.lat.toFixed(5)}, ${e.latlng.lng.toFixed(5)}`;
   });
+  // Leaflet rewrites raster image CSS transforms during zoom/pan. Re-apply chart
+  // rotation after map movement so committed chart overlays do not visually drift.
+  MAP.on('zoom zoomend moveend viewreset resize', refreshChartOverlayTransforms);
 }
 
 function setBase(kind){
@@ -2885,6 +2888,7 @@ function nudgeImage(dLat,dLon){
   IMG_BOUNDS.north+=dLat; IMG_BOUNDS.south+=dLat; 
   IMG_BOUNDS.east+=dLon; IMG_BOUNDS.west+=dLon;
   IMG_OVERLAY.setBounds([[IMG_BOUNDS.north,IMG_BOUNDS.west],[IMG_BOUNDS.south,IMG_BOUNDS.east]]);
+  applyOverlayRotation(IMG_OVERLAY, IMG_ROTATION||0);
 }
 
 function scaleImage(fLat,fLon){
@@ -2901,10 +2905,23 @@ function applyOverlayRotation(overlay, deg){
   if(!overlay) return;
   const el = overlay.getElement && overlay.getElement();
   if(!el) return;
-  // Use the CSS individual transform property so Leaflet can keep controlling
-  // translate/scale while TrollMap adds a small visual rotation on top.
+  const rot = deg || 0;
   el.style.transformOrigin = 'center center';
-  el.style.rotate = `${deg||0}deg`;
+  el.style.transformBox = 'fill-box';
+  // Leaflet rewrites style.transform during zoom/pan animation.  Do not use the
+  // CSS "rotate" property by itself here; append rotate() to Leaflet's current
+  // transform so the chart keeps tracking the map after zoom/scroll.
+  const base = (el.style.transform || '').replace(/\s*rotate\([^)]*\)/g, '');
+  el.style.transform = `${base} rotate(${rot}deg)`.trim();
+}
+
+function refreshChartOverlayTransforms(){
+  try{
+    if(IMG_OVERLAY) applyOverlayRotation(IMG_OVERLAY, IMG_ROTATION||0);
+    CHARTS.forEach(c=>{
+      if(c && c.overlay && c.visible !== false) applyOverlayRotation(c.overlay, c.rotation||0);
+    });
+  }catch(e){ console.warn('chart transform refresh failed', e); }
 }
 
 function rotateImage(deltaDeg){
@@ -3060,6 +3077,15 @@ function addChartLayer(name, img, bounds, opacity, rotation){
 }
 
 async function commitWorkingChart(){
+  // If user is re-nudging an already-committed chart, Commit should save those
+  // edits instead of throwing "Load + georeference a chart first".
+  if((!IMG_DATAURL || !IMG_BOUNDS) && ACTIVE_CHART>=0 && CHARTS[ACTIVE_CHART]){
+    await persistCharts();
+    refreshChartOverlayTransforms();
+    setBanner(`Saved edits to "${CHARTS[ACTIVE_CHART].name}"`);
+    setTimeout(() => setBanner(''), 1800);
+    return;
+  }
   if(!IMG_DATAURL||!IMG_BOUNDS){ alert('Load + georeference a chart first'); return; }
   const name=prompt('Name this chart (e.g. "Wateree North Cove"):', 'Chart '+(CHARTS.length+1));
   if(!name) return;
@@ -3089,7 +3115,12 @@ function renderChartList(){
   host.querySelectorAll('[data-cv]').forEach(el=>el.addEventListener('change',e=>{
     const i=+e.target.dataset.cv;
     CHARTS[i].visible=e.target.checked;
-    CHARTS[i].visible?CHARTS[i].overlay.addTo(MAP):MAP.removeLayer(CHARTS[i].overlay);
+    if(CHARTS[i].visible){
+      CHARTS[i].overlay.addTo(MAP);
+      setTimeout(()=>applyOverlayRotation(CHARTS[i].overlay, CHARTS[i].rotation||0), 0);
+    } else {
+      MAP.removeLayer(CHARTS[i].overlay);
+    }
   }));
   host.querySelectorAll('[data-co]').forEach(el=>el.addEventListener('input',e=>{
     const i=+e.target.dataset.co;
