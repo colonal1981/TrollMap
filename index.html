@@ -874,6 +874,21 @@
             <textarea id="planLakeIntel" rows="8" placeholder="Click Build Lake Intel after selecting a lake. This text is saved with the plan and included in the preview." style="font-size:12.5px"></textarea>
           </div>
 
+          <!-- Section 2a2: Clarity & Runoff Intelligence -->
+          <div class="card plan-section" id="clarityIntelCard">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px">
+              <h4 style="margin:0">🌦 Clarity &amp; Runoff Intelligence</h4>
+              <div style="display:flex;gap:6px;align-items:center">
+                <button id="syncClarityIntelBtn" class="small primary" title="Predict clarity by lake zone from recent/forecast rain, wind, and lake profile">⚡ Build Clarity Forecast</button>
+                <span id="clarityIntelStatus" style="font-size:11px;color:var(--muted);font-family:monospace">Ready</span>
+              </div>
+            </div>
+            <p class="muted" style="margin-top:0;line-height:1.4">Predicts which lake zones will be clear/stained/muddy, recommends lure colors, and suggests ramps/zones. This is a model — verify water color at the ramp.</p>
+            <div id="clarityIntelSummary" style="display:none;background:rgba(255,183,3,0.10);border-left:4px solid var(--warn);padding:10px 14px;border-radius:0 8px 8px 0;margin-bottom:10px;font-size:12.5px;line-height:1.45"></div>
+            <textarea id="planClarityIntel" rows="7" placeholder="Click Build Clarity Forecast after selecting a lake and trip date. Included in the preview and used to update Water Clarity." style="font-size:12.5px"></textarea>
+          </div>
+
+
           <!-- Section 2b: Coastal Tides (saltwater trips) -->
           <div class="card plan-section" id="tidesCard">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px">
@@ -3897,6 +3912,7 @@ function collectPlan(){
       solunar: document.getElementById('planSolunar').value,
       structure: document.getElementById('planStructure').value,
       lakeIntel: document.getElementById('planLakeIntel')?.value || '',
+      clarityIntel: document.getElementById('planClarityIntel')?.value || '',
       species,
     },
     trolling:{
@@ -3951,6 +3967,7 @@ function loadPlanIntoForm(p){
   document.getElementById('planSolunar').value = m.solunar||'';
   if(document.getElementById('planStructure')) document.getElementById('planStructure').value = m.structure||'';
   if(document.getElementById('planLakeIntel')) document.getElementById('planLakeIntel').value = m.lakeIntel||'';
+  if(document.getElementById('planClarityIntel')) document.getElementById('planClarityIntel').value = m.clarityIntel||'';
   document.querySelectorAll('#planSpeciesChecks input').forEach(c=> c.checked = (m.species||[]).includes(c.value));
   if(p.trolling){
     document.getElementById('planSpeed').value = p.trolling.speed||'2.4';
@@ -4652,6 +4669,8 @@ ${p.meta.riverSummary ? `<div class="rp-callout rp-warn"><b>🌊 River / Dam Rel
 
 ${p.meta.lakeIntel ? `<div class="rp-callout rp-info"><b>🧠 Lake Intelligence Briefing</b><br>${esc(p.meta.lakeIntel).replace(/\n/g,'<br>')}</div>` : ''}
 
+${p.meta.clarityIntel ? `<div class="rp-callout rp-warn"><b>🌦 Clarity & Runoff Intelligence</b><br>${esc(p.meta.clarityIntel).replace(/\n/g,'<br>')}</div>` : ''}
+
 ${tidesHtml}
 
 <div class="rp-callout ${goClass}" style="${goNoGo==='NO-GO'?'background:#fff0f0;border-left:5px solid #b3261e':''}">
@@ -5275,6 +5294,59 @@ Manual checklist: species, forage, stocking, invasive/spotted bass, bottom compo
 setTimeout(()=>{
   document.getElementById('syncLakeIntelBtn')?.addEventListener('click', ()=>window.syncLakeIntelData?.());
 }, 800);
+
+
+window.syncClarityIntelData = async function syncClarityIntelData(){
+  const lakeSel = document.getElementById('planLake');
+  const statusEl = document.getElementById('clarityIntelStatus');
+  const btn = document.getElementById('syncClarityIntelBtn');
+  const out = document.getElementById('planClarityIntel');
+  const summary = document.getElementById('clarityIntelSummary');
+  const lakeVal = lakeSel?.value || '';
+  const label = isPlanRiverValue(lakeVal) ? (getPlanRiverDef(lakeVal)?.lakeKey || getPlanRiverDef(lakeVal)?.label || lakeVal) : lakeVal;
+  const date = document.getElementById('planDate')?.value || new Date().toISOString().slice(0,10);
+  const worker = (typeof CF_WORKER_URL !== 'undefined' ? CF_WORKER_URL : (window.CF_WORKER_URL || 'https://trollmap-worker.colonal1981.workers.dev'));
+  function say(msg,bad){ if(statusEl){ statusEl.textContent=msg; statusEl.style.color=bad?'var(--bad)':'var(--accent2)'; } }
+  if(!label){ say('Select lake first', true); return null; }
+  try{
+    say('Modeling runoff…', false);
+    if(btn){ btn.disabled=true; btn.textContent='⏳ Modeling…'; }
+    const res = await fetch(`${worker}/lake-clarity?lake=${encodeURIComponent(label)}&date=${encodeURIComponent(date)}`);
+    if(!res.ok) throw new Error(`Worker HTTP ${res.status}`);
+    const d = await res.json();
+    const lines=[];
+    lines.push(`${d.lake} — Clarity & Runoff Forecast for ${d.tripDate}`);
+    lines.push(`${d.summary}`);
+    lines.push(`Confidence: ${d.confidence}. ${d.verify}`);
+    if(d.rain){ lines.push(`Rain/runoff signal: ${d.rain.weighted72_in}" weighted 72h rain · trip-day rain ${Math.round((d.rain.precipTrip_mm||0)/25.4*100)/100}" · wind max ${d.rain.windMax_mph||'—'} mph`); }
+    if(d.overall){ lines.push(`Overall predicted clarity: ${d.overall.clarity} (score ${d.overall.score}/100)`); lines.push(`Recommended colors: ${d.overall.lureColors.join(', ')}`); lines.push(`Tactics: ${d.overall.tactics.join('; ')}`); }
+    if(d.bestZones?.length){ lines.push('Best clarity / safer starting zones:'); d.bestZones.forEach(z=>lines.push(`• ${z.name}: ${z.clarity} — ${z.likely}`)); }
+    if(d.dirtyZones?.length){ lines.push('Likeliest dirty/muddy zones:'); d.dirtyZones.forEach(z=>lines.push(`• ${z.name}: ${z.clarity} — ${z.likely}`)); }
+    if(d.rampRecommendations?.length){ lines.push('Ramp / zone recommendations:'); d.rampRecommendations.forEach(r=>lines.push(`• ${r.zone}${r.ramps?.length?` (${r.ramps.join(', ')})`:''}: score ${r.score}/100 — ${r.why}`)); }
+    if(d.note) lines.push(`Lake profile note: ${d.note}`);
+    if(out) out.value = lines.join('\n');
+    // Drive existing lure-color engine by updating Water Clarity select.
+    if(d.overall?.select){ const claritySel=document.getElementById('planClarity'); if(claritySel) claritySel.value=d.overall.select; }
+    if(summary){
+      summary.style.display='block';
+      summary.innerHTML = `<b style="color:var(--warn)">🌦 ${esc(d.lake)}</b><br><span>Predicted: <b>${esc(d.overall?.clarity||'Unknown')}</b></span>${d.rain?`<br><span class="muted">Rain signal: ${esc(d.rain.weighted72_in)}&quot; weighted 72h · verify at ramp</span>`:''}`;
+    }
+    say('✓ Clarity ready', false);
+    window.LAST_CLARITY_INTEL=d;
+    return d;
+  } catch(err){
+    console.warn('Clarity intel failed', err);
+    say('Clarity error', true);
+    if(out) out.value = `Clarity model failed for ${label}: ${err.message}\nManual rule: after significant rain, upper/northern creeks and backs muddy first; lower/deeper main lake is usually clearest. Verify at ramp.`;
+    return null;
+  } finally {
+    if(btn){ btn.disabled=false; btn.textContent='⚡ Build Clarity Forecast'; }
+  }
+};
+
+setTimeout(()=>{
+  document.getElementById('syncClarityIntelBtn')?.addEventListener('click', ()=>window.syncClarityIntelData?.());
+}, 900);
 
 
 document.getElementById('autoNameBtn')?.addEventListener('click',()=>{
