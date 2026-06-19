@@ -1,5 +1,5 @@
 /* TrollMap service worker — modular/lazy-data build */
-const CACHE_NAME = 'trollmap-v12-clarity-decision-fix-2026-06-18';
+const CACHE_NAME = 'trollmap-v12-lakemonster-species-fix-2026-06-18';
 const CORE_ASSETS = [
   './',
   './index.html',

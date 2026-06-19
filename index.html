@@ -451,7 +451,7 @@
         </div>
 
         <!-- Working Georef Console (Unhidden when chart image loaded) -->
-        <div id="toolbarGeorefGroup" class="image-work-console hidden" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;border-left:2px solid var(--accent);padding-left:8px">
+        <div id="toolbarGeorefGroup" class="image-work-console" style="display:none;align-items:center;gap:6px;flex-wrap:wrap;border-left:2px solid var(--accent);padding-left:8px">
           <button id="georefBtn" class="small primary">📍 Align</button>
           <button id="autoCropImgBtn" class="small" title="Auto-crop Navionics screenshot — removes status bar (top 80px) and zoom controls (right 120px)">✂ Auto-Crop</button>
           <button id="addChartBtn" class="small primary">➕ Commit</button>
@@ -2854,6 +2854,7 @@ function placeProvisionalOverlay(){
   const lonScale=1/Math.cos(center.lat*Math.PI/180);
   const imgW=imgH*aspect*lonScale;
   const north=center.lat+imgH/2, south=center.lat-imgH/2, west=center.lng-imgW/2, east=center.lng+imgW/2;
+  IMG_BOUNDS={north,south,east,west};
   
   IMG_OVERLAY=L.imageOverlay(IMG_DATAURL,[[north,west],[south,east]],{
     opacity:document.getElementById('imgOpacity').value/100,
@@ -3146,8 +3147,13 @@ function nudgeTarget(dLat, dLon){
 function showNudgeToolbar() {
   const toolbar = document.getElementById('toolbarGeorefGroup');
   const nudge   = document.getElementById('nudgeGroup');
-  if (toolbar) toolbar.style.display = 'flex';
-  if (nudge)   nudge.style.display   = 'flex';
+  if (toolbar) {
+    // Safety: older builds had class="hidden" with display:none !important,
+    // which prevented JS from ever showing the chart alignment toolbar.
+    toolbar.classList.remove('hidden');
+    toolbar.style.display = 'flex';
+  }
+  if (nudge) nudge.style.display = 'flex';
 }
 
 /* ---------- Contour / layer import ---------- */
@@ -5268,14 +5274,11 @@ Use the river fields above for live dam schedule, streamflow, surge ETA, and kay
       lines.push('LakeMonster supplemental context (VERIFY — third-party/model source, not official):');
       const lm=[];
       if(d.lakeMonster.waterTemp_F) lm.push(`surface temp estimate ${d.lakeMonster.waterTemp_F}°F`);
-      if(d.lakeMonster.acreage) lm.push(`${d.lakeMonster.acreage} acres`);
-      if(d.lakeMonster.elevation_ft) lm.push(`${d.lakeMonster.elevation_ft} ft listed elevation`);
-      if(d.lakeMonster.fishSpeciesCount) lm.push(`${d.lakeMonster.fishSpeciesCount} fish species listed`);
       if(d.lakeMonster.biteRating) lm.push(`bite rating ${d.lakeMonster.biteRating}`);
       if(d.lakeMonster.wind) lm.push(`wind ${d.lakeMonster.wind}`);
       if(d.lakeMonster.pressure) lm.push(`pressure ${d.lakeMonster.pressure}`);
       if(lm.length) lines.push(`• ${lm.join(' · ')}`);
-      if(d.lakeMonster.species?.length) lines.push(`• LakeMonster species mentions: ${d.lakeMonster.species.join(', ')}`);
+      lines.push('• Note: LakeMonster species/elevation lists are intentionally NOT used as facts here; they can be generic or wrong for this lake.');
       if(d.lakeMonster.context) lines.push(`• ${d.lakeMonster.context}`);
     }
     if(d.latestReport?.summary){
