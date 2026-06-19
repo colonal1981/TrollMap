@@ -4549,6 +4549,17 @@ async function buildPlanPreviewHtml(p){
       else addPositive(`Water temperature ${wt}°F — acceptable`);
     }
 
+    const clarityIntelText = String(p.meta.clarityIntel || '').toLowerCase();
+    if(clarityIntelText){
+      if(/muddy\s*\/\s*debris risk|debris risk/.test(clarityIntelText)){
+        addRisk('CAUTION: clarity/runoff model predicts muddy water or debris risk — verify ramps, floating debris, and clearer lower-lake zones');
+      } else if(/overall predicted clarity:\s*muddy|muddy/.test(clarityIntelText)){
+        addRisk('CAUTION: clarity/runoff model predicts muddy water — adjust colors and avoid backs of creeks unless targeting mudlines');
+      } else if(/overall predicted clarity:\s*stained|stained/.test(clarityIntelText)){
+        addRisk('CAUTION: clarity/runoff model predicts stained water — favor color breaks, vibration, and high-contrast colors');
+      }
+    }
+
     // If Open-Meteo failed but the weather text field has wind/storm wording, use it.
     const weatherText = String(p.meta.weather || '').toLowerCase();
     const windMatch = weatherText.match(/(?:wind|winds|gusts?)?[^0-9]{0,12}(\d{1,2})\s*mph/i);
@@ -4757,7 +4768,7 @@ ${twilightHtml?`<h2>4 · Light &amp; Bite Feed Triggers</h2>${twilightHtml}`:''}
     <tr style="background:#eef4fa"><th>Target Trolling Speed</th><th>Target Drop-Off Depth</th><th>Tactical Pattern</th></tr>
   </thead>
   <tbody>
-    <tr><td><b style="font-size:15px;color:#0d4f8b">${esc(p.trolling.speed||'—')} mph</b></td><td><b style="font-size:15px;color:#0d4f8b">${esc(p.trolling.targetDepth||'—')} ft</b></td><td><b style="font-size:15px">${esc(p.trolling.pattern||'—')}</b></td></tr>
+    <tr><td><b style="font-size:15px;color:#0d4f8b">${esc(p.trolling.speed||'—')} mph</b></td><td><b style="font-size:15px;color:#0d4f8b">${esc(p.trolling.targetDepth||'25–35')} ft</b></td><td><b style="font-size:15px">${esc(p.trolling.pattern||'—')}</b></td></tr>
   </tbody>
 </table>
 
