@@ -440,7 +440,7 @@
             <option value="dark">Dark</option>
             <option value="usgsHybrid">USGS Sat+Topo HD</option>
             <option value="opentopo">OpenTopo HD</option>
-            <option value="noaaMarine">NOAA RNC Charts</option>
+            <option value="noaaMarine">NOAA Coastal Charts</option>
           </select>
           <select id="editMode" class="toolbar-select" style="width: 80px;">
             <option value="view">View</option>
@@ -660,22 +660,27 @@
             <div><label>Points / lane</label><input id="gPts" type="number" value="40" min="5"></div>
             <div><label>Pattern</label>
               <select id="gPattern">
-                <option value="straight">Straight</option>
-                <option value="s-curve">S-Curve</option>
-                <option value="zigzag">Zigzag</option>
+                <option value="straight">Straight — follow waypoint lane</option>
+                <option value="s-curve">S-Curve — weave between waypoint points</option>
+                <option value="zigzag">Zigzag — hard turns between waypoint points</option>
+                <option value="s-straight">S-Curve + Straight Shots</option>
+                <option value="z-straight">Zigzag + Straight Shots</option>
               </select>
             </div>
             <div><label>S amplitude (ft)</label><input id="gAmp" type="number" value="30" min="0"></div>
             <div><label>S wavelength (ft)</label><input id="gWave" type="number" value="300" min="10"></div>
+            <div><label>Straight shot length (ft)</label><input id="gStraight" type="number" value="350" min="25"></div>
             <div><label>Connect lanes?</label><select id="gConnect"><option value="no">Separate tracks</option><option value="yes">1 connected track</option></select></div>
           </div>
           <div class="row" style="margin-top:10px">
             <button id="gPickStart">🎯 Pick start</button>
             <button id="gPickEnd">🎯 Pick end</button>
             <span style="flex:1"></span>
-            <button id="gPreview">👁 Preview</button>
+            <button id="gPreview">👁 Preview start/end</button>
+            <button id="gPreviewWpt">👁 Preview waypoint lanes</button>
             <button id="gClearPreview">Clear</button>
-            <button id="gCommit" class="primary">➕ Commit</button>
+            <button id="gCommit">➕ Commit start/end</button>
+            <button id="gCommitWpt" class="primary">➕ Commit waypoint lanes</button>
           </div>
           <div id="gMsg"></div>
         </div>
@@ -688,6 +693,8 @@
         <div class="row" style="gap:8px;margin-bottom:10px">
           <button id="bulkPrefixBtn">🔤 Bulk rename</button>
           <button id="dedupeBtn">🧹 De-dupe</button>
+          <button id="connectSelBtn" class="primary">🔗 Connect selected → Track</button>
+          <button id="curveSelBtn" class="primary">〰️ Selected → S-Curve Track</button>
           <button id="delSelBtn">🗑️ Delete selected</button>
           <button id="recoverBtn">🔄 Recover centerline</button>
         </div>
@@ -1775,7 +1782,7 @@ const TILES = {
   dark: { url:'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', attr:'CartoDB' },
   usgsHybrid: { url:'https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryTopo/MapServer/tile/{z}/{y}/{x}', attr:'USGS National Map' },
   opentopo: { url:'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', attr:'OpenTopoMap' },
-  noaaMarine: { url:'https://tiles.arcgis.com/tiles/nGt4QxAWlioEAaoGL/arcgis/rest/services/NOAA_RNC/MapServer/tile/{z}/{y}/{x}', attr:'NOAA Official Navigation Charts' }
+  noaaMarine: { url:'https://gis.charttools.noaa.gov/arcgis/rest/services/MarineChart_Services/NOAACharts/MapServer/WMTS/tile/1.0.0/MarineChart_Services_NOAACharts/default/default028mm/{z}/{y}/{x}.png', attr:'NOAA Coastal Navigation Charts (coastal/Great Lakes only)' }
 };
 
 let MAP=null, LAYER=null, BASE=null, BASE_LABELS=null, MAP_OK=false;
@@ -2512,6 +2519,10 @@ function initMap(){
 
 function setBase(kind){
   if(!MAP) return;
+  if(kind === 'noaaMarine'){
+    setBanner('NOAA charts are coastal/Great Lakes only — inland lakes like Wateree may show blank.');
+    setTimeout(()=>setBanner(''), 4200);
+  }
   
   // Remove existing base and label overlays
   if(BASE) MAP.removeLayer(BASE);
@@ -3755,8 +3766,110 @@ function readGenCfg(){
     pattern:document.getElementById('gPattern').value,
     sAmp:parseFloat(document.getElementById('gAmp').value)||30,
     sWave:parseFloat(document.getElementById('gWave').value)||300,
+    straightFt:parseFloat(document.getElementById('gStraight')?.value)||350,
     connect:document.getElementById('gConnect').value
   };
+}
+
+function tmDistBearing(lat1,lon1,lat2,lon2){
+  const R=20902231, D2R=Math.PI/180, R2D=180/Math.PI;
+  const p1=lat1*D2R, p2=lat2*D2R, dp=(lat2-lat1)*D2R, dl=(lon2-lon1)*D2R;
+  const a=Math.sin(dp/2)**2 + Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;
+  const dist=R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+  const y=Math.sin(dl)*Math.cos(p2);
+  const x=Math.cos(p1)*Math.sin(p2)-Math.sin(p1)*Math.cos(p2)*Math.cos(dl);
+  return [dist,(Math.atan2(y,x)*R2D+360)%360];
+}
+function tmDestination(lat,lon,bearingDeg,distFt){
+  const R=20902231, D2R=Math.PI/180, R2D=180/Math.PI;
+  const br=bearingDeg*D2R, lr=lat*D2R, d=distFt/R;
+  const lat2=Math.asin(Math.sin(lr)*Math.cos(d)+Math.cos(lr)*Math.sin(d)*Math.cos(br));
+  const lon2=lon*D2R+Math.atan2(Math.sin(br)*Math.sin(d)*Math.cos(lr), Math.cos(d)-Math.sin(lr)*Math.sin(lat2));
+  return [lat2*R2D, lon2*R2D];
+}
+function groupWaypointLanes(){
+  const lanes={};
+  DATA.waypoints.forEach((w,idx)=>{
+    const name=String(w.name||'');
+    let m=name.match(/LN\s*(\d+)/i) || name.match(/\bL\s*(\d+)\b/i) || name.match(/(?:^|[^A-Z])L(\d+)[_\- ]/i);
+    if(!m) return;
+    const lane=String(parseInt(m[1],10));
+    const nums=(name.match(/\d+/g)||[]).map(Number);
+    const order=nums.length ? nums[nums.length-1] : idx;
+    (lanes[lane]=lanes[lane]||[]).push({lat:+w.lat, lon:+w.lon, name, order, idx});
+  });
+  Object.keys(lanes).forEach(k=>lanes[k].sort((a,b)=>a.order-b.order || a.idx-b.idx));
+  return lanes;
+}
+function genSegStraight(a,b,cfg){
+  const [dist,brng]=tmDistBearing(a.lat,a.lon,b.lat,b.lon);
+  const n=Math.max(1,Math.ceil(dist/Math.max(50,cfg.ptsPerLane?dist/cfg.ptsPerLane:120)));
+  const pts=[]; for(let i=0;i<=n;i++) pts.push(tmDestination(a.lat,a.lon,brng,dist*i/n));
+  return pts;
+}
+function genSegSine(a,b,cfg){
+  const [dist,brng]=tmDistBearing(a.lat,a.lon,b.lat,b.lon); if(dist<1) return [];
+  const n=Math.max(8,Math.ceil((dist/Math.max(20,cfg.sWave))*16));
+  const perp=(brng+90)%360, pts=[];
+  for(let i=0;i<=n;i++){
+    const t=i/n;
+    const c=tmDestination(a.lat,a.lon,brng,dist*t);
+    const off=Math.sin((2*Math.PI*dist*t)/Math.max(20,cfg.sWave))*cfg.sAmp;
+    pts.push(tmDestination(c[0],c[1],perp,off));
+  }
+  return pts;
+}
+function genSegZigzag(a,b,cfg){
+  const [dist,brng]=tmDistBearing(a.lat,a.lon,b.lat,b.lon); if(dist<1) return [];
+  const step=Math.max(20,cfg.sWave/2), n=Math.max(1,Math.ceil(dist/step));
+  const perp=(brng+90)%360, pts=[[a.lat,a.lon]];
+  let dir=1;
+  for(let i=1;i<n;i++){
+    const c=tmDestination(a.lat,a.lon,brng,dist*i/n);
+    pts.push(tmDestination(c[0],c[1],perp,cfg.sAmp*dir));
+    dir*=-1;
+  }
+  pts.push([b.lat,b.lon]);
+  return pts;
+}
+function genSegMixed(a,b,cfg,curveFn){
+  const [dist,brng]=tmDistBearing(a.lat,a.lon,b.lat,b.lon); if(dist<1) return [];
+  const pts=[[a.lat,a.lon]];
+  let cursor=0;
+  while(cursor<dist){
+    const endS=Math.min(cursor+cfg.straightFt,dist);
+    const s=tmDestination(a.lat,a.lon,brng,cursor), e=tmDestination(a.lat,a.lon,brng,endS);
+    const straight=genSegStraight({lat:s[0],lon:s[1]},{lat:e[0],lon:e[1]},cfg);
+    pts.push(...straight.slice(1)); cursor=endS;
+    if(cursor>=dist) break;
+    const endC=Math.min(cursor+cfg.sWave,dist);
+    const cs=tmDestination(a.lat,a.lon,brng,cursor), ce=tmDestination(a.lat,a.lon,brng,endC);
+    const cur=curveFn({lat:cs[0],lon:cs[1]},{lat:ce[0],lon:ce[1]},cfg);
+    pts.push(...cur.slice(1)); cursor=endC;
+  }
+  return pts;
+}
+function buildWaypointLaneTracks(cfg){
+  const lanes=groupWaypointLanes();
+  const keys=Object.keys(lanes).map(Number).sort((a,b)=>a-b).map(String);
+  const tracks=[];
+  keys.forEach(k=>{
+    const raw=lanes[k]; if(raw.length<2) return;
+    let pts=[];
+    for(let i=0;i<raw.length-1;i++){
+      const a=raw[i], b=raw[i+1];
+      let seg;
+      if(cfg.pattern==='straight') seg=genSegStraight(a,b,cfg);
+      else if(cfg.pattern==='zigzag') seg=genSegZigzag(a,b,cfg);
+      else if(cfg.pattern==='s-straight') seg=genSegMixed(a,b,cfg,genSegSine);
+      else if(cfg.pattern==='z-straight') seg=genSegMixed(a,b,cfg,genSegZigzag);
+      else seg=genSegSine(a,b,cfg);
+      if(i>0) seg=seg.slice(1);
+      pts.push(...seg);
+    }
+    if(pts.length>1) tracks.push({name:`${cfg.lakeCode || 'LN'}L${k}`, pts});
+  });
+  return {tracks, laneCount: keys.length, usableCount: tracks.length};
 }
 
 function setGenMsg(s,ok){
@@ -3775,6 +3888,15 @@ document.getElementById('gPreview')?.addEventListener('click',()=>{
   setGenMsg(`Preview: ${tracks.length} track(s) shown.`, true);
 });
 
+document.getElementById('gPreviewWpt')?.addEventListener('click',()=>{
+  const cfg=readGenCfg();
+  const {tracks,laneCount,usableCount}=buildWaypointLaneTracks(cfg);
+  if(!laneCount){ setGenMsg('No waypoint lanes found. Rename guide waypoints like LN1_001, LN1_002, LN2_001, etc.'); return; }
+  if(!tracks.length){ setGenMsg(`Found ${laneCount} lane group(s), but none had at least 2 points.`); return; }
+  showPreview(tracks);
+  setGenMsg(`Preview from waypoint lanes: ${usableCount} track(s) shown. Pattern: ${cfg.pattern}.`, true);
+});
+
 document.getElementById('gClearPreview')?.addEventListener('click',()=>{ clearPreview(); setGenMsg('Preview cleared.'); });
 
 document.getElementById('gCommit')?.addEventListener('click',()=>{
@@ -3786,6 +3908,18 @@ document.getElementById('gCommit')?.addEventListener('click',()=>{
   clearPreview();
   renderAll();
   setGenMsg(`Committed ${tracks.length} track(s), ${wpts.length} waypoints.`, true);
+  document.getElementById('fileLabel').textContent=`${FILENAME} — ${DATA.waypoints.length} wpts, ${DATA.tracks.length} tracks`;
+});
+
+document.getElementById('gCommitWpt')?.addEventListener('click',()=>{
+  const cfg=readGenCfg();
+  const {tracks,laneCount,usableCount}=buildWaypointLaneTracks(cfg);
+  if(!laneCount){ setGenMsg('No waypoint lanes found. Rename guide waypoints like LN1_001, LN1_002, LN2_001, etc.'); return; }
+  if(!tracks.length){ setGenMsg(`Found ${laneCount} lane group(s), but none had at least 2 points.`); return; }
+  DATA.tracks.push(...tracks);
+  clearPreview();
+  renderAll();
+  setGenMsg(`Committed ${usableCount} waypoint-lane trolling track(s). Export GPX when ready.`, true);
   document.getElementById('fileLabel').textContent=`${FILENAME} — ${DATA.waypoints.length} wpts, ${DATA.tracks.length} tracks`;
 });
 
@@ -3818,6 +3952,64 @@ function renderEditTables(){
   host.querySelectorAll('[data-tn]').forEach(el=>el.addEventListener('input',e=>{DATA.tracks[+e.target.dataset.tn].name=e.target.value;}));
   host.querySelectorAll('[data-tdel]').forEach(el=>el.addEventListener('click',e=>{DATA.tracks.splice(+e.target.dataset.tdel,1); renderAll();}));
 }
+
+document.getElementById('connectSelBtn')?.addEventListener('click',()=>{
+  const sel=[...document.querySelectorAll('[data-sel]:checked')].map(c=>+c.dataset.sel);
+  if(sel.length < 2){ alert('Check at least 2 waypoints in the Edit tab first.'); return; }
+  const name = prompt('Track/lane name:', 'Lane '+(DATA.tracks.length+1));
+  if(name === null) return;
+  const pts = sel.map(i => [DATA.waypoints[i].lat, DATA.waypoints[i].lon]);
+  DATA.tracks.push({name: name || ('Lane '+DATA.tracks.length), pts});
+  renderAll();
+  alert(`Created track "${name||('Lane '+DATA.tracks.length)}" from ${sel.length} waypoints.\n\nIf it connects in the wrong order, rename your waypoints in lane order or select them from top-to-bottom in the table after sorting/renaming.`);
+});
+
+function makeSCurveAlongPolyline(centerPts, ampFt, waveFt, stepFt){
+  if(!centerPts || centerPts.length < 2) return [];
+  const out=[];
+  let traveled=0;
+  for(let si=0; si<centerPts.length-1; si++){
+    const a=centerPts[si], b=centerPts[si+1];
+    const segLen=distFt(a,b);
+    if(segLen < 1) continue;
+    const n=Math.max(2, Math.ceil(segLen / Math.max(10, stepFt||35)));
+    for(let j=0; j<=n; j++){
+      if(si>0 && j===0) continue;
+      const t=j/n;
+      const lat=a[0]+(b[0]-a[0])*t;
+      const lon=a[1]+(b[1]-a[1])*t;
+      const midLat=(a[0]+b[0])/2;
+      const dx=(b[1]-a[1])*364000*Math.cos(midLat*Math.PI/180); // east ft
+      const dy=(b[0]-a[0])*364000; // north ft
+      const len=Math.max(1, Math.sqrt(dx*dx+dy*dy));
+      const px=-dy/len, py=dx/len; // left/right perpendicular in feet
+      const d=traveled + segLen*t;
+      const off=(ampFt||0) * Math.sin((2*Math.PI*d)/Math.max(20, waveFt||300));
+      const lat2=lat + (py*off)/364000;
+      const lon2=lon + (px*off)/(364000*Math.cos(lat*Math.PI/180));
+      out.push([lat2, lon2]);
+    }
+    traveled += segLen;
+  }
+  return out;
+}
+
+document.getElementById('curveSelBtn')?.addEventListener('click',()=>{
+  const sel=[...document.querySelectorAll('[data-sel]:checked')].map(c=>+c.dataset.sel);
+  if(sel.length < 2){ alert('Check at least 2 waypoints in the Edit tab first.'); return; }
+  const name = prompt('S-curve track/lane name:', 'Curve Lane '+(DATA.tracks.length+1));
+  if(name === null) return;
+  const amp = parseFloat(prompt('S-curve width/amplitude in feet. Use 0 for a straight line through the waypoints.', '30'));
+  if(isNaN(amp)) return;
+  const wave = parseFloat(prompt('S-curve wavelength in feet. Bigger = gentler curves.', '300'));
+  if(isNaN(wave) || wave <= 0) return;
+  const pts = sel.map(i => [DATA.waypoints[i].lat, DATA.waypoints[i].lon]);
+  const trackPts = makeSCurveAlongPolyline(pts, amp, wave, 35);
+  if(trackPts.length < 2){ alert('Could not build track from selected waypoints.'); return; }
+  DATA.tracks.push({name: name || ('Curve Lane '+DATA.tracks.length), pts: trackPts});
+  renderAll();
+  alert(`Created S-curve track "${name||('Curve Lane '+DATA.tracks.length)}" from ${sel.length} guide waypoints.\n\nIf it crosses land, use a smaller amplitude or place more guide waypoints around the safe water path.`);
+});
 
 document.getElementById('delSelBtn')?.addEventListener('click',()=>{
   const sel=[...document.querySelectorAll('[data-sel]:checked')].map(c=>+c.dataset.sel).sort((a,b)=>b-a);
@@ -7653,6 +7845,11 @@ setTimeout(() => {
   if(!btn||!fileInput) return;
 
   let VECTOR_LAYERS = {}; // name → L.geoJSON layer
+  window.CUSTOM_VECTOR_LAYERS = VECTOR_LAYERS;
+  window.removeCustomVectorLayer = function(layerName){
+    if(VECTOR_LAYERS[layerName]){ MAP.removeLayer(VECTOR_LAYERS[layerName]); delete VECTOR_LAYERS[layerName]; renderVectorList(); return true; }
+    return false;
+  };
   let panelOpen = false;
 
   window.addCustomVectorLayer = function(layerName, geojson){
@@ -7891,8 +8088,27 @@ window.showCatchPhoto = function(i) {
 (function initFetchOsmStructureModule(){
   const btn = document.getElementById('btnFetchOsm');
   if(!btn) return;
+  let osmLayerNames = [];
+  let osmVisible = false;
 
-  btn.addEventListener('click', async () => {
+  btn.addEventListener('click', async (event) => {
+    // Once fetched, the button becomes a simple show/hide toggle. Hold Shift while clicking to refresh/re-query.
+    if(osmLayerNames.length && !event.shiftKey){
+      if(osmVisible){
+        osmLayerNames.forEach(n => window.CUSTOM_VECTOR_LAYERS?.[n] && MAP.removeLayer(window.CUSTOM_VECTOR_LAYERS[n]));
+        osmVisible = false;
+        btn.textContent = '🌐 Show OSM Structure';
+        btn.style.background = ''; btn.style.color = '';
+      } else {
+        osmLayerNames.forEach(n => window.CUSTOM_VECTOR_LAYERS?.[n] && window.CUSTOM_VECTOR_LAYERS[n].addTo(MAP));
+        osmVisible = true;
+        btn.textContent = '🙈 Hide OSM Structure';
+        btn.style.background = 'var(--accent)'; btn.style.color = '#000';
+      }
+      return;
+    }
+
+  
     if(!MAP_OK) return;
     const lakeName = document.getElementById('lakeSelect')?.value || document.getElementById('planLake')?.value || 'Active Bounding Area';
     const cleanLake = lakeName.split(',')[0].trim();
@@ -8006,6 +8222,7 @@ out skel qt;`;
         return;
       }
 
+      if(osmLayerNames.length){ osmLayerNames.forEach(n => window.removeCustomVectorLayer?.(n)); osmLayerNames = []; }
       const layerName = `OSM_Structure_${cleanLake.replace(/\s+/g, '_')}_${Date.now().toString().slice(-4)}`;
       const geojsonFC = { type: 'FeatureCollection', features };
 
@@ -8018,14 +8235,22 @@ out skel qt;`;
         }).addTo(MAP);
       }
 
-      alert(`✅ Flawlessly fetched & parsed ${features.length} submerged OSM features for active area!\n\n• Auto-loaded into your 'My Structure' vector pool under "${layerName}".\n• Plotted and styled directly on your map canvas.`);
+      osmLayerNames = [layerName];
+      osmVisible = true;
+      btn.textContent = '🙈 Hide OSM Structure';
+      btn.style.background = 'var(--accent)';
+      btn.style.color = '#000';
+
+      alert(`✅ Fetched ${features.length} OSM structure features.\n\nThe same button now toggles this OSM layer on/off. Shift-click it later to refresh/re-query.`);
 
     } catch(err) {
       alert(`OSM Overpass Query Error: ${err.message}\n\nPlease check your internet connection or verify Overpass API availability.`);
     } finally {
-      btn.textContent = '🌐 Live OSM Structure';
-      btn.style.background = '';
-      btn.style.color = '';
+      if(!osmVisible){
+        btn.textContent = osmLayerNames.length ? '🌐 Show OSM Structure' : '🌐 Live OSM Structure';
+        btn.style.background = '';
+        btn.style.color = '';
+      }
     }
   });
 
@@ -8531,5 +8756,6 @@ if ('serviceWorker' in navigator) {
 
 <!-- Standalone Rivers tab removed: river data is now integrated into the Plan tab. -->
 
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a0dbbf447c4653b1',t:'MTc4MTgwMDk0NQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a0dbbf447c4653b1',t:'MTc4MTgwMDk0NQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script defer src="https://static.cloudflareinsights.com/beacon.min.js/v833ccba57c9e4d2798f2e76cebdd09a11778172276447" integrity="sha512-57MDmcccJXYtNnH+ZiBwzC4jb2rvgVCEokYN+L/nLlmO8rfYT/gIpW2A569iJ/3b+0UEasghjuZH/ma3wIs/EQ==" data-cf-beacon='{"version":"2024.11.0","token":"1954b47c125f43f8b4338b3c4f804e4f","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
+</body>
 </html>
