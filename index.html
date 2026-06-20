@@ -1160,7 +1160,7 @@ const DB = {
   async open() {
     return new Promise((res, rej) => {
       if (!window.indexedDB) return rej("IndexedDB not supported");
-      const req = indexedDB.open('TrollMapDB', 3);
+      const req = indexedDB.open('TrollMapDB', 4);
       req.onupgradeneeded = e => {
         const db = e.target.result;
         if(!db.objectStoreNames.contains('layers')) db.createObjectStore('layers', {keyPath:'name'});
@@ -1169,6 +1169,7 @@ const DB = {
         if(!db.objectStoreNames.contains('settings')) db.createObjectStore('settings', {keyPath:'key'});
         if(!db.objectStoreNames.contains('sonar')) db.createObjectStore('sonar', {keyPath:'name'});
         if(!db.objectStoreNames.contains('plans')) db.createObjectStore('plans', {keyPath:'id', autoIncrement:true});
+        if(!db.objectStoreNames.contains('spreads')) db.createObjectStore('spreads', {keyPath:'name'});
       };
       req.onsuccess = e => { this.db = e.target.result; res(this.db); };
       req.onerror = e => rej(e);
@@ -2587,10 +2588,41 @@ function suggestName(){
   return 'WPT'+n;
 }
 
+let RESTORING_WORKING_DATA = false;
+async function persistWorkingData(){
+  if(RESTORING_WORKING_DATA || !DB || !DB.db) return;
+  try{
+    await DB.put('settings', {
+      key:'working_gpx_data',
+      filename:FILENAME,
+      data: JSON.parse(JSON.stringify(DATA)),
+      savedAt:new Date().toISOString()
+    });
+    const fl=document.getElementById('fileLabel');
+    if(fl) fl.title='Autosaved '+new Date().toLocaleTimeString();
+  }catch(e){ console.warn('Working GPX autosave failed', e); }
+}
+async function restoreWorkingData(){
+  if(!DB || !DB.db) return;
+  try{
+    const rec=await DB.get('settings','working_gpx_data');
+    if(!rec || !rec.data) return;
+    if((DATA.waypoints&&DATA.waypoints.length) || (DATA.tracks&&DATA.tracks.length)) return;
+    RESTORING_WORKING_DATA = true;
+    DATA = rec.data;
+    FILENAME = rec.filename || 'autosaved_working_data.gpx';
+    const fl=document.getElementById('fileLabel');
+    if(fl) fl.textContent=`Restored autosave — ${DATA.waypoints.length} wpts, ${DATA.tracks.length} tracks`;
+    renderMap(); renderEditTables(); renderPlanStats();
+    RESTORING_WORKING_DATA = false;
+  }catch(e){ console.warn('Working GPX restore failed', e); RESTORING_WORKING_DATA=false; }
+}
+
 function renderAll(){ 
   renderMap(); 
   renderEditTables(); 
-  renderPlanStats(); 
+  renderPlanStats();
+  persistWorkingData();
 }
 
 function renderMap(){
@@ -4694,6 +4726,22 @@ async function buildPlanPreviewHtml(p){
 
     // Compass direction from degrees
     function windDir(deg){ const dirs=['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW']; return dirs[Math.round(deg/22.5)%16]; }
+    function weatherCodeText(code){
+      code = Number(code);
+      const map = {
+        0:'Sunny / clear', 1:'Mostly sunny', 2:'Partly cloudy', 3:'Cloudy / overcast',
+        45:'Foggy', 48:'Freezing fog',
+        51:'Light drizzle', 53:'Drizzle', 55:'Heavy drizzle',
+        56:'Freezing drizzle', 57:'Freezing drizzle',
+        61:'Light rain', 63:'Rain', 65:'Heavy rain',
+        66:'Freezing rain', 67:'Freezing rain',
+        71:'Light snow', 73:'Snow', 75:'Heavy snow', 77:'Snow grains',
+        80:'Light showers', 81:'Rain showers', 82:'Heavy showers',
+        85:'Snow showers', 86:'Heavy snow showers',
+        95:'Thunderstorms', 96:'Thunderstorms with hail', 99:'Severe thunderstorms with hail'
+      };
+      return map[code] || 'Forecast condition unavailable';
+    }
 
     // Solunar calculation (pure JS — no API needed)
     // Moon transits = major periods, moon rise/set = minor periods
@@ -4765,8 +4813,8 @@ async function buildPlanPreviewHtml(p){
     // Fetch Open-Meteo: daily + hourly in one call
     try {
       const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}`+
-        `&daily=temperature_2m_max,temperature_2m_min,sunrise,sunset,windspeed_10m_max,winddirection_10m_dominant,precipitation_sum,uv_index_max`+
-        `&hourly=temperature_2m,windspeed_10m,winddirection_10m,precipitation_probability,pressure_msl,uv_index`+
+        `&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,windspeed_10m_max,winddirection_10m_dominant,precipitation_sum,uv_index_max`+
+        `&hourly=weather_code,cloud_cover,temperature_2m,windspeed_10m,winddirection_10m,precipitation_probability,pressure_msl,uv_index`+
         `&timezone=auto&start_date=${date}&end_date=${date}`;
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 4000);
@@ -4778,6 +4826,7 @@ async function buildPlanPreviewHtml(p){
         const D = data.daily;
         sunriseStr = fmt12(D.sunrise[0].split('T')[1]);
         sunsetStr  = fmt12(D.sunset[0].split('T')[1]);
+        const condition = weatherCodeText(D.weather_code?.[0]);
         const tmaxF = Math.round(D.temperature_2m_max[0] * 9/5 + 32);
         const tminF = Math.round(D.temperature_2m_min[0] * 9/5 + 32);
         const windMph = Math.round(D.windspeed_10m_max[0] * 0.621371);
@@ -4787,7 +4836,7 @@ async function buildPlanPreviewHtml(p){
         const hot = tmaxF >= 90;
         const uvWarn = uvMax >= 8 ? ` <b>⚠ UV ${uvMax} (VERY HIGH)</b> — Full sun protection required.` : uvMax >= 6 ? ` UV ${uvMax} (High) — SPF50+ and UV shirt.` : '';
 
-        weatherHtml = `High <b>${tmaxF}°F</b> / Low <b>${tminF}°F</b> · Wind <b>${windD} ${windMph} mph</b> · Precip <b>${precip}mm</b> · UV max <b>${uvMax}</b>.`+
+        weatherHtml = `<b>${condition}</b> · High <b>${tmaxF}°F</b> / Low <b>${tminF}°F</b> · Wind <b>${windD} ${windMph} mph</b> · Precip <b>${precip}mm</b> · UV max <b>${uvMax}</b>.`+
           (hot ? ' <b>⚠ HEAT ADVISORY — hydrate hard, consider early exit.</b>' : '') + uvWarn;
 
         // Hourly wind table for launch window (4 AM to 2 PM = hours 4-14)
@@ -5841,7 +5890,7 @@ document.getElementById('saveSpreadBtn')?.addEventListener('click', async ()=>{
   const name = prompt('Save spread as:', document.getElementById('planName').value+' Spread');
   if(!name) return;
   SAVED_SPREADS[name] = SPREAD.map(r=>Object.assign({},r));
-  if(DB&&DB.db) try { await DB.put('spreads',{name, rods:SAVED_SPREADS[name]}); } catch(e){}
+  if(DB&&DB.db) try { await DB.put('spreads',{name, rods:SAVED_SPREADS[name]}); } catch(e){ alert('Spread save failed: '+e); }
   refreshSpreadsSelect();
   document.getElementById('savedSpreadsSelect').value = name;
 });
@@ -6721,6 +6770,7 @@ setTimeout(() => {
     DB.getAll('sonar').then(all=>{ for(const rec of all) addSonarLayer(rec.name, rec.gridGeo, rec.rawPoints); renderSonarList(); }).catch(()=>{});
     loadAllLayers();
     restoreCharts();
+    restoreWorkingData();
     loadSavedSpreads();
     loadCatches();
     populatePlanLakeDropdown();
