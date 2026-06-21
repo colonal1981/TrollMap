@@ -1226,6 +1226,17 @@ const DB = {
           r.onerror=()=>rej(r.error); 
       } catch(e) { rej(e); }
     }); 
+  },
+  async clear(store){
+    if(!this.db) return Promise.resolve();
+    return new Promise((res,rej)=>{
+      try{
+        const tx=this.db.transaction(store,'readwrite');
+        const r=tx.objectStore(store).clear();
+        r.onsuccess=()=>res();
+        r.onerror=()=>rej(r.error);
+      }catch(e){ rej(e); }
+    });
   }
 };
 DB.open().catch(e=>console.warn('IndexedDB unavailable',e));
@@ -3390,10 +3401,16 @@ async function deleteChartsByPredicate(pred, confirmText){
 }
 
 function wireChartBulkButtons(){
-  document.getElementById('chartShowAllBtn')?.addEventListener('click',()=>setAllChartsVisible(true));
-  document.getElementById('chartHideAllBtn')?.addEventListener('click',()=>setAllChartsVisible(false));
-  document.getElementById('chartDeleteHiddenBtn')?.addEventListener('click',()=>deleteChartsByPredicate(c=>!c.visible,'Delete {n} hidden chart layer(s)?'));
-  document.getElementById('chartDeleteAllBtn')?.addEventListener('click',()=>deleteChartsByPredicate(()=>true,'DELETE ALL {n} chart layer(s)? This cannot be undone.'));
+  const show=document.getElementById('chartShowAllBtn');
+  const hide=document.getElementById('chartHideAllBtn');
+  const delHidden=document.getElementById('chartDeleteHiddenBtn');
+  const delAll=document.getElementById('chartDeleteAllBtn');
+  // Use onclick assignment instead of addEventListener so repeated renderChartList()
+  // calls do not stack duplicate handlers and fire delete twice.
+  if(show) show.onclick=()=>setAllChartsVisible(true);
+  if(hide) hide.onclick=()=>setAllChartsVisible(false);
+  if(delHidden) delHidden.onclick=()=>deleteChartsByPredicate(c=>!c.visible,'Delete {n} hidden chart layer(s)?');
+  if(delAll) delAll.onclick=()=>deleteChartsByPredicate(()=>true,'DELETE ALL {n} chart layer(s)? This cannot be undone.');
 }
 
 function renderChartList(){
@@ -3461,9 +3478,14 @@ function renderChartList(){
 async function persistCharts(){
   if(!DB||!DB.db) return;
   try {
-    // Store each chart individually in the 'charts' store
-    const existing = await DB.getAll('charts');
-    for(const c of existing) await DB.del('charts', c.name).catch(()=>{});
+    // Replace the chart store with the current in-memory list.
+    // clear() is safer than deleting by name because bad/old imported records
+    // may have missing/duplicate keys or no matching live Leaflet layer.
+    if(DB.clear) await DB.clear('charts');
+    else {
+      const existing = await DB.getAll('charts');
+      for(const c of existing) await DB.del('charts', c.name).catch(()=>{});
+    }
     for(const c of CHARTS) await DB.put('charts', {
       type:c.type||'bounds', name:c.name, img:c.img, b:c.bounds,
       natSize:c.natSize, pts:c.pts, opacity:c.opacity, rotation:c.rotation||0, visible:c.visible!==false
@@ -9002,6 +9024,5 @@ if ('serviceWorker' in navigator) {
 <!-- Standalone Rivers tab removed: river data is now integrated into the Plan tab. -->
 
 <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a0dbbf447c4653b1',t:'MTc4MTgwMDk0NQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script defer src="https://static.cloudflareinsights.com/beacon.min.js/v833ccba57c9e4d2798f2e76cebdd09a11778172276447" integrity="sha512-57MDmcccJXYtNnH+ZiBwzC4jb2rvgVCEokYN+L/nLlmO8rfYT/gIpW2A569iJ/3b+0UEasghjuZH/ma3wIs/EQ==" data-cf-beacon='{"version":"2024.11.0","token":"1954b47c125f43f8b4338b3c4f804e4f","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
-<script defer src="https://static.cloudflareinsights.com/beacon.min.js/v833ccba57c9e4d2798f2e76cebdd09a11778172276447" integrity="sha512-57MDmcccJXYtNnH+ZiBwzC4jb2rvgVCEokYN+L/nLlmO8rfYT/gIpW2A569iJ/3b+0UEasghjuZH/ma3wIs/EQ==" data-cf-beacon='{"version":"2024.11.0","token":"1954b47c125f43f8b4338b3c4f804e4f","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
 </body>
 </html>
