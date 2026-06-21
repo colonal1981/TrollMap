@@ -390,8 +390,14 @@
           <span style="color:var(--accent);font-weight:700">📐 Chart Layers</span>
           <button id="closeChartLayersBtn" style="background:none;border:none;color:var(--muted);font-size:14px;padding:0 4px;cursor:pointer">✕</button>
         </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 8px">
+          <button id="chartShowAllBtn" class="small" style="padding:3px 7px;font-size:11px">☑ Show all</button>
+          <button id="chartHideAllBtn" class="small" style="padding:3px 7px;font-size:11px">☐ Hide all</button>
+          <button id="chartDeleteHiddenBtn" class="small" style="padding:3px 7px;font-size:11px;color:var(--warn)">🧹 Delete hidden</button>
+          <button id="chartDeleteAllBtn" class="small" style="padding:3px 7px;font-size:11px;color:var(--bad)">💣 Delete all</button>
+        </div>
         <div id="chartLayers"></div>
-        <p class="muted" style="margin:6px 0 0;font-size:11px">🗑 removes · ✥ re-nudge · slider = opacity</p>
+        <p class="muted" style="margin:6px 0 0;font-size:11px">☑ show/hide · 🗑 removes · ✥ re-nudge · slider = opacity</p>
       </div>
 
       <div id="georefBanner" style="position:absolute;top:8px;left:50%;transform:translateX(-50%);z-index:600;background:#b06a00;color:#fff;border-radius:8px;padding:6px 16px;font-size:13px;font-weight:700;display:none;pointer-events:none"></div>
@@ -3334,7 +3340,64 @@ async function commitWorkingChart(){
   document.getElementById('nudgeGroup').style.display='none';
 }
 
+function removeChartLayerObj(c){
+  if(!c || !MAP) return;
+  try{
+    if(c.type==='affine') c.affine?.remove();
+    else if(c.overlay && MAP.hasLayer(c.overlay)) MAP.removeLayer(c.overlay);
+    else if(c.overlay) { try{ MAP.removeLayer(c.overlay); }catch(_){} }
+  }catch(e){ console.warn('chart layer remove failed', e); }
+}
+
+function addChartLayerObj(c){
+  if(!c || !MAP) return;
+  try{
+    if(c.type==='affine'){
+      if(c.affine) c.affine.add();
+      else if(c.img && c.natSize && c.pts) c.affine=createAffineImageOverlay(c.img, c.natSize, c.pts, c.opacity||0.75);
+    } else if(c.overlay){
+      c.overlay.addTo(MAP);
+      setTimeout(()=>applyOverlayRotation(c.overlay, c.rotation||0), 0);
+    }
+  }catch(e){ console.warn('chart layer add failed', e); }
+}
+
+async function setAllChartsVisible(visible){
+  CHARTS.forEach(c=>{
+    c.visible=visible;
+    if(visible) addChartLayerObj(c);
+    else removeChartLayerObj(c);
+  });
+  ACTIVE_CHART=-1;
+  renderChartList();
+  await persistCharts();
+}
+
+async function deleteChartsByPredicate(pred, confirmText){
+  const doomed=[];
+  CHARTS.forEach((c,i)=>{ if(pred(c,i)) doomed.push(i); });
+  if(!doomed.length){ alert('No matching chart layers to delete.'); return; }
+  if(confirmText && !confirm(confirmText.replace('{n}', doomed.length))) return;
+  doomed.sort((a,b)=>b-a).forEach(i=>{
+    removeChartLayerObj(CHARTS[i]);
+    CHARTS.splice(i,1);
+  });
+  ACTIVE_CHART=-1;
+  renderChartList();
+  await persistCharts();
+  setBanner(`Deleted ${doomed.length} chart layer(s)`);
+  setTimeout(()=>setBanner(''),1800);
+}
+
+function wireChartBulkButtons(){
+  document.getElementById('chartShowAllBtn')?.addEventListener('click',()=>setAllChartsVisible(true));
+  document.getElementById('chartHideAllBtn')?.addEventListener('click',()=>setAllChartsVisible(false));
+  document.getElementById('chartDeleteHiddenBtn')?.addEventListener('click',()=>deleteChartsByPredicate(c=>!c.visible,'Delete {n} hidden chart layer(s)?'));
+  document.getElementById('chartDeleteAllBtn')?.addEventListener('click',()=>deleteChartsByPredicate(()=>true,'DELETE ALL {n} chart layer(s)? This cannot be undone.'));
+}
+
 function renderChartList(){
+  wireChartBulkButtons();
   const host=document.getElementById('chartLayers'); if(!host) return;
   const wrap=document.getElementById('chartLayersWrap');
   if(!CHARTS.length){ wrap.style.display='none'; return; }
@@ -3347,20 +3410,13 @@ function renderChartList(){
       <button data-ce="${i}" title="Re-nudge this chart" style="padding:2px 5px;font-size:11px">✥</button>
       <button data-cd="${i}" title="Remove" style="padding:2px 5px;font-size:11px">🗑</button>
     </div>`).join('');
-  host.querySelectorAll('[data-cv]').forEach(el=>el.addEventListener('change',e=>{
+  host.querySelectorAll('[data-cv]').forEach(el=>el.addEventListener('change',async e=>{
     const i=+e.target.dataset.cv;
+    if(!CHARTS[i]) return;
     CHARTS[i].visible=e.target.checked;
-    if(CHARTS[i].visible){
-      if(CHARTS[i].type==='affine'){
-        if(CHARTS[i].affine) CHARTS[i].affine.add();
-      } else {
-        CHARTS[i].overlay.addTo(MAP);
-        setTimeout(()=>applyOverlayRotation(CHARTS[i].overlay, CHARTS[i].rotation||0), 0);
-      }
-    } else {
-      if(CHARTS[i].type==='affine') CHARTS[i].affine?.remove();
-      else MAP.removeLayer(CHARTS[i].overlay);
-    }
+    if(CHARTS[i].visible) addChartLayerObj(CHARTS[i]);
+    else removeChartLayerObj(CHARTS[i]);
+    await persistCharts();
   }));
   host.querySelectorAll('[data-co]').forEach(el=>el.addEventListener('input',e=>{
     const i=+e.target.dataset.co;
@@ -3374,10 +3430,12 @@ function renderChartList(){
   }));
   host.querySelectorAll('[data-cd]').forEach(el=>el.addEventListener('click',async e=>{
     const i=+e.target.dataset.cd;
+    if(!CHARTS[i]) return;
     if(!confirm(`Remove "${CHARTS[i].name}"?`)) return;
-    if(CHARTS[i].type==='affine') CHARTS[i].affine?.remove();
-    else MAP.removeLayer(CHARTS[i].overlay);
+    removeChartLayerObj(CHARTS[i]);
     CHARTS.splice(i,1);
+    if(ACTIVE_CHART===i) ACTIVE_CHART=-1;
+    else if(ACTIVE_CHART>i) ACTIVE_CHART--;
     renderChartList();
     await persistCharts();
   }));
@@ -3408,7 +3466,7 @@ async function persistCharts(){
     for(const c of existing) await DB.del('charts', c.name).catch(()=>{});
     for(const c of CHARTS) await DB.put('charts', {
       type:c.type||'bounds', name:c.name, img:c.img, b:c.bounds,
-      natSize:c.natSize, pts:c.pts, opacity:c.opacity, rotation:c.rotation||0
+      natSize:c.natSize, pts:c.pts, opacity:c.opacity, rotation:c.rotation||0, visible:c.visible!==false
     });
   } catch(e){ console.warn('Chart persist failed', e); }
 }
@@ -3421,6 +3479,11 @@ async function restoreCharts(){
     all.forEach(c=>{
       if(c.type==='affine' && c.pts && c.natSize) addAffineChartLayer(c.name, c.img, c.natSize, c.pts, c.opacity);
       else addChartLayer(c.name, c.img, c.b, c.opacity, c.rotation||0);
+      const added = CHARTS[CHARTS.length-1];
+      if(added){
+        added.visible = c.visible !== false;
+        if(!added.visible) removeChartLayerObj(added);
+      }
     });
     const pts=[];
     CHARTS.forEach(c=>{
@@ -8939,5 +9002,6 @@ if ('serviceWorker' in navigator) {
 <!-- Standalone Rivers tab removed: river data is now integrated into the Plan tab. -->
 
 <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a0dbbf447c4653b1',t:'MTc4MTgwMDk0NQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script defer src="https://static.cloudflareinsights.com/beacon.min.js/v833ccba57c9e4d2798f2e76cebdd09a11778172276447" integrity="sha512-57MDmcccJXYtNnH+ZiBwzC4jb2rvgVCEokYN+L/nLlmO8rfYT/gIpW2A569iJ/3b+0UEasghjuZH/ma3wIs/EQ==" data-cf-beacon='{"version":"2024.11.0","token":"1954b47c125f43f8b4338b3c4f804e4f","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
+<script defer src="https://static.cloudflareinsights.com/beacon.min.js/v833ccba57c9e4d2798f2e76cebdd09a11778172276447" integrity="sha512-57MDmcccJXYtNnH+ZiBwzC4jb2rvgVCEokYN+L/nLlmO8rfYT/gIpW2A569iJ/3b+0UEasghjuZH/ma3wIs/EQ==" data-cf-beacon='{"version":"2024.11.0","token":"1954b47c125f43f8b4338b3c4f804e4f","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
 </body>
 </html>
