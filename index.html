@@ -2540,6 +2540,7 @@ function initMap(){
     return;
   }
   MAP=L.map('map',{center:[33.92,-80.34],zoom:8, zoomControl:false});
+  window.MAP=MAP;  // expose for cross-script modules (contour-job export, etc.)
   L.control.zoom({position:'bottomright'}).addTo(MAP);
   setBase('sat');
   LAYER=L.layerGroup().addTo(MAP);
