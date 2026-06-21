@@ -6,6 +6,7 @@
 <meta name="theme-color" content="#0b1623">
 <title>🎣 TrollMap GPX Studio v8 Carolinas Master Edition</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
 <style>
   :root {
     --bg: #0b1623; 
@@ -416,6 +417,23 @@
         </div>
       </div>
 
+      <!-- ── CONTOUR JOB EXPORT PANEL ── -->
+      <div id="contourJobPanel" style="display:none;position:absolute;top:60px;right:8px;z-index:650;background:rgba(11,22,35,.95);border:1px solid var(--accent);border-radius:10px;padding:10px 12px;font-size:12px;max-width:300px;box-shadow:0 4px 16px rgba(0,0,0,.6)">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <span style="color:var(--accent);font-weight:700">✏️ Contour Job Ready</span>
+          <button id="contourJobClose" style="background:none;border:none;color:var(--muted);font-size:14px;padding:0 4px;cursor:pointer">✕</button>
+        </div>
+        <div id="contourJobInfo" style="color:var(--text);margin-bottom:8px;line-height:1.5"></div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
+          <input id="contourJobName" placeholder="job name (no .json)" style="flex:1;min-width:120px;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:4px;padding:4px 6px;font-size:11px">
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button id="contourJobSave" class="small primary" style="flex:1">💾 Save job.json</button>
+          <button id="contourJobDiscard" class="small" style="color:var(--bad);border-color:var(--bad)">🗑 Discard</button>
+        </div>
+        <p class="muted" style="margin:8px 0 0;font-size:11px;line-height:1.4">After saving, run in terminal:<br><code style="color:var(--accent)">py trollmap_build_contours.py build --job &lt;name&gt;.json --out chartpack_&lt;name&gt;</code></p>
+      </div>
+
       <!-- ── PERSISTENT BOTTOM MAP CONTROL TOOLBAR ── -->
       <div id="mapToolBar" class="map-toolbar no-print">
         
@@ -431,6 +449,7 @@
           <button id="btnShowCatches" class="small" title="Plot Catch Journal on Map">🐟 Catches</button>
           <button id="btnQuickdrawKey" class="small" style="color:#ffb703;border-color:#ffb703" title="Toggle Garmin ActiveCaptain 8-Band Tactical Color Depth Key">🌈 Quickdraw Key</button>
           <button id="btnCastingRings" class="small" title="Draw professional 60ft casting approach rings around Waypoints">⭕ Casting Rings</button>
+          <button id="btnDrawContour" class="small" style="color:#76ff03;border-color:#76ff03" title="Draw a polygon outlining the lake area you want depth contours for. Click to add points, double-click (or click first point) to finish. Saves a job.json for the TrollMap build-contours pipeline.">✏️ Contour Area</button>
           <button id="btnTrackReverse" class="small" title="Toggle continuous loop — reverses selected track for return trolling pass">🔄 Loop Track</button>
           <button id="btnCustomVectors" class="small" title="Load private GeoJSON structure layer — brush piles, road beds, creek mouths">🗂 My Structure</button>
           <button id="btnFetchOsm" class="small" style="color:#76ff03;border-color:#76ff03" title="Direct browser pull from OpenStreetMap Overpass API — fetches submerged roadbeds, old bridges, historic foundations, and original river centerlines">🌐 Live OSM Structure</button>
@@ -1152,6 +1171,7 @@ First thunder → nearest shore immediately</textarea>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
 <script src="./js/lazy-data.js"></script>
 <script>
 /* ============================
@@ -9018,6 +9038,172 @@ if ('serviceWorker' in navigator) {
     + ' fishing systems, ' + Object.keys(SCDNR_OVERRIDES).length + ' SCDNR overrides');
 })();
 
+<!-- ── Contour Job Export (TrollMap → Python pipeline) ── -->
+<script>
+(function initContourJobExport() {
+  if (!window.MAP || !window.L) {
+    setTimeout(initContourJobExport, 200);
+    return;
+  }
+
+  const IBOATING_BASE = 'https://fishing-app.gpsnauticalcharts.com/i-boating-fishing-web-app/fishing-marine-charts-navigation.html';
+
+  let contourLayer = null;
+  let drawingMode = false;
+
+  function clearContour() {
+    if (contourLayer) {
+      window.MAP.removeLayer(contourLayer);
+      contourLayer = null;
+    }
+    document.getElementById('contourJobPanel').style.display = 'none';
+  }
+
+  function polygonCentroid(latlngs) {
+    let lat = 0, lon = 0, n = 0;
+    for (const p of latlngs) {
+      // Leaflet LatLng exposes .lat and .lng
+      lat += p.lat;
+      lon += p.lng;
+      n++;
+    }
+    return [lat / n, lon / n];
+  }
+
+  function showSavePanel(latlngs) {
+    const [cLat, cLon] = polygonCentroid(latlngs);
+    const zoom = window.MAP.getZoom();
+    const iBoatingUrl = `${IBOATING_BASE}#${zoom.toFixed(1)}/${cLat.toFixed(7)}/${cLon.toFixed(7)}`;
+    const bounds = L.latLngBounds(latlngs);
+    const n = latlngs.length;
+
+    const info = document.getElementById('contourJobInfo');
+    info.innerHTML = `
+      <div><b style="color:var(--accent)">${n}</b> points</div>
+      <div>Centroid: <code>${cLat.toFixed(5)}, ${cLon.toFixed(5)}</code></div>
+      <div>Zoom: <b style="color:var(--accent)">${zoom.toFixed(1)}</b></div>
+      <div>Bounds: ${bounds.getNorth().toFixed(4)}°N to ${bounds.getSouth().toFixed(4)}°S<br>
+                  ${bounds.getWest().toFixed(4)}°W to ${bounds.getEast().toFixed(4)}°E</div>
+      <div style="margin-top:4px;word-break:break-all;font-size:10px;color:var(--muted)">${iBoatingUrl}</div>
+    `;
+
+    // Default job name
+    const ts = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const defaultName = `trollmap_${ts}_z${Math.round(zoom)}`;
+    const nameInput = document.getElementById('contourJobName');
+    if (!nameInput.value) nameInput.value = defaultName;
+
+    document.getElementById('contourJobPanel').style.display = 'block';
+  }
+
+  function downloadJobJson(latlngs) {
+    const [cLat, cLon] = polygonCentroid(latlngs);
+    const zoom = window.MAP.getZoom();
+    const source_url = `${IBOATING_BASE}#${zoom.toFixed(1)}/${cLat.toFixed(7)}/${cLon.toFixed(7)}`;
+
+    // Convert Leaflet LatLng[] → [lon, lat][] for the Python script.
+    const polygon = latlngs.map(p => [+p.lng.toFixed(7), +p.lat.toFixed(7)]);
+    // Close the ring if not already closed.
+    if (polygon.length && (polygon[0][0] !== polygon[polygon.length-1][0] || polygon[0][1] !== polygon[polygon.length-1][1])) {
+      polygon.push(polygon[0]);
+    }
+
+    const rawName = (document.getElementById('contourJobName').value || 'trollmap_job').trim().replace(/[^A-Za-z0-9_\-]/g, '_');
+    const filename = `${rawName}.json`;
+
+    const job = {
+      name: rawName,
+      source_url,
+      polygon,
+      viewport: [2400, 1400],
+      overlap: 0.25,
+      wait: 12.0,
+      retries: 4,
+    };
+
+    const blob = new Blob([JSON.stringify(job, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+    return { filename, job };
+  }
+
+  // ── Wire up the toolbar button ──
+  const btn = document.getElementById('btnDrawContour');
+  btn?.addEventListener('click', () => {
+    if (drawingMode) {
+      // Already drawing — disable.
+      window.MAP.drawer?.disable?.();
+      drawingMode = false;
+      btn.textContent = '✏️ Contour Area';
+      btn.style.background = '';
+      return;
+    }
+    clearContour();
+    // Start a fresh polygon draw using Leaflet.Draw's Polygon handler.
+    const drawer = new L.Draw.Polygon(window.MAP, {
+      shapeOptions: { color: '#76ff03', weight: 3, fillOpacity: 0.1 },
+      allowIntersection: false,
+      showArea: false,
+    });
+    drawer.enable();
+    drawingMode = true;
+    btn.textContent = '✏️ Cancel';
+    btn.style.background = 'rgba(118,255,3,.2)';
+
+    window.MAP.once(L.Draw.Event.CREATED, (e) => {
+      drawingMode = false;
+      btn.textContent = '✏️ Contour Area';
+      btn.style.background = '';
+
+      // Remove previous polygon if any.
+      if (contourLayer) window.MAP.removeLayer(contourLayer);
+      contourLayer = e.layer;
+      contourLayer.addTo(window.MAP);
+      const latlngs = e.layer.getLatLngs()[0]; // outer ring
+      showSavePanel(latlngs);
+    });
+
+    // If user cancels mid-draw, reset button state.
+    window.MAP.once(L.Draw.Event.DRAWSTOP, () => {
+      if (drawingMode) {
+        drawingMode = false;
+        btn.textContent = '✏️ Contour Area';
+        btn.style.background = '';
+      }
+    });
+  });
+
+  // ── Save panel buttons ──
+  document.getElementById('contourJobSave')?.addEventListener('click', () => {
+    if (!contourLayer) return;
+    const latlngs = contourLayer.getLatLngs()[0];
+    const { filename, job } = downloadJobJson(latlngs);
+    const info = document.getElementById('contourJobInfo');
+    const saved = document.createElement('div');
+    saved.style.cssText = 'margin-top:6px;color:var(--accent2);font-weight:700';
+    saved.textContent = `✓ Saved ${filename}`;
+    info.appendChild(saved);
+    console.log('[contour-job] saved', job);
+  });
+
+  document.getElementById('contourJobDiscard')?.addEventListener('click', () => {
+    clearContour();
+    document.getElementById('contourJobName').value = '';
+  });
+
+  document.getElementById('contourJobClose')?.addEventListener('click', () => {
+    document.getElementById('contourJobPanel').style.display = 'none';
+  });
+
+  console.log('[contour-job] export module ready');
+})();
 </script>
 
 
