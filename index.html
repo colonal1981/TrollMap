@@ -2993,13 +2993,15 @@ document.getElementById('batchImportInput')?.addEventListener('change', e => {
       }
 
       const pr = new FileReader();
-      pr.onload = pev => {
+      pr.onload = async pev => {
         const bounds = { north: b.north, south: b.south, east: b.east, west: b.west };
         addChartLayer(base, pev.target.result, bounds, 0.75, 0);
         loaded++;
         if (loaded === total) {
           setBanner(`✅ Imported ${total} chart tiles`);
           setTimeout(() => setBanner(''), 3000);
+          // Persist to IndexedDB so contours survive a page refresh.
+          await persistCharts();
           // Fit map to imported tiles
           const lats = [], lons = [];
           CHARTS.slice(-total).forEach(c => {
