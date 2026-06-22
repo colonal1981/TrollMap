@@ -2304,7 +2304,7 @@ document.getElementById('clearImgBtn')?.addEventListener('click',()=>{
   if(IMG_AFFINE){ IMG_AFFINE.remove(); IMG_AFFINE=null; }
   IMG_DATAURL=null; IMG_BOUNDS=null; IMG_NATSIZE=null; IMG_ROTATION=0; IMG_AFFINE_PTS=null;
   georefState=null; ACTIVE_CHART=-1;
-  document.getElementById('toolbarGeorefGroup')?.style document.getElementById('toolbarGeorefGroup').style.displaydocument.getElementById('toolbarGeorefGroup').style.display (document.getElementById('toolbarGeorefGroup') && (document.getElementById('toolbarGeorefGroup').style.display = 'none');
+  document.getElementById('toolbarGeorefGroup') && (document.getElementById('toolbarGeorefGroup').style.display = 'none');
   document.getElementById('nudgeGroup') && (document.getElementById('nudgeGroup').style.display = 'none');
   document.getElementById('imgInput').value='';
 });
@@ -2332,7 +2332,7 @@ document.getElementById('imgInput')?.addEventListener('change',e=>{
       IMG_ROTATION=0; IMG_AFFINE_PTS=null;
       if(IMG_AFFINE){ IMG_AFFINE.remove(); IMG_AFFINE=null; }
       ACTIVE_CHART=-1; // new image targets working overlay
-      document.getElementById('toolbarGeorefGroup')?.style document.getElementById('toolbarGeorefGroup').style.displaydocument.getElementById('toolbarGeorefGroup').style.display (document.getElementById('toolbarGeorefGroup') && (document.getElementById('toolbarGeorefGroup').style.display = 'flex');
+      document.getElementById('toolbarGeorefGroup') && (document.getElementById('toolbarGeorefGroup').style.display = 'flex');
       placeProvisionalOverlay();
     }; 
     im.src=IMG_DATAURL;
@@ -2433,7 +2433,7 @@ function placeProvisionalOverlay(){
   }).addTo(MAP);
   IMG_OVERLAY.setZIndex(1);
   applyOverlayRotation(IMG_OVERLAY, IMG_ROTATION);
-  document.getElementById('toolbarGeorefGroup')?.style document.getElementById('toolbarGeorefGroup').style.displaydocument.getElementById('toolbarGeorefGroup').style.display (document.getElementById('toolbarGeorefGroup') && (document.getElementById('toolbarGeorefGroup').style.display = 'flex');
+  document.getElementById('toolbarGeorefGroup') && (document.getElementById('toolbarGeorefGroup').style.display = 'flex');
   document.getElementById('nudgeGroup') && (document.getElementById('nudgeGroup').style.display = 'flex');
 }
 
@@ -2587,7 +2587,7 @@ function rotateImage(deltaDeg){
 
 ['nN','nS','nW','nE'].forEach((id,ix)=>{
   const deltas=[[1,0],[-1,0],[0,-1],[0,1]];
-  document.getElementById(id).addEventListener('click',()=>nudgeTarget(deltas[ix][0]*step(),deltas[ix][1]*step()));
+  document.getElementById(id)?.addEventListener('click',()=>nudgeTarget(deltas[ix][0]*step(),deltas[ix][1]*step()));
 });
 document.getElementById('nBig')?.addEventListener('click',e=>{ BIG_STEP=!BIG_STEP; e.target.textContent='step: '+(BIG_STEP?'coarse':'fine'); });
 document.getElementById('nWide')?.addEventListener('click',()=>scaleTarget(1,1.01));
@@ -2779,7 +2779,7 @@ async function commitWorkingChart(){
   await persistCharts();
   // Reset working state so user can load another image
   IMG_DATAURL=null; IMG_BOUNDS=null; IMG_NATSIZE=null; IMG_ROTATION=0; IMG_AFFINE_PTS=null;
-  document.getElementById('toolbarGeorefGroup')?.style document.getElementById('toolbarGeorefGroup').style.displaydocument.getElementById('toolbarGeorefGroup').style.display (document.getElementById('toolbarGeorefGroup') && (document.getElementById('toolbarGeorefGroup').style.display = 'none');
+  document.getElementById('toolbarGeorefGroup') && (document.getElementById('toolbarGeorefGroup').style.display = 'none');
   document.getElementById('nudgeGroup') && (document.getElementById('nudgeGroup').style.display = 'none');
 }
 
@@ -6099,6 +6099,7 @@ window.sendWptToGenerator = function(lat, lon, target){
 ═══════════════════════════════════════════════════════════ */
 // Set your Cloudflare Worker URL here after deploying
 const CF_WORKER_URL = 'https://trollmap-worker.colonal1981.workers.dev';
+window.CF_WORKER_URL = CF_WORKER_URL;
 
 async function fetchDamLevels(){
   // Prefer Cloudflare Worker /duke proxy (bypasses CORS from GitHub Pages)
