@@ -1087,7 +1087,26 @@ const DB = {
     });
   }
 };
-DB.open().catch(e=>console.warn('IndexedDB unavailable',e));
+DB.open().then(() => {
+  loadAllLayers();
+  restoreCharts();
+  restoreWorkingData();
+  loadSavedSpreads();
+  loadCatches();
+  populatePlanLakeDropdown();
+}).catch(e => {
+  console.warn('IndexedDB open failed, retrying once…', e);
+  setTimeout(() => {
+    if (DB && DB.db) {
+      loadAllLayers();
+      restoreCharts();
+      restoreWorkingData();
+      loadSavedSpreads();
+      loadCatches();
+      populatePlanLakeDropdown();
+    }
+  }, 1200);
+});
 
 /* ---------- LAKE DATABASE – SC / NC / GA within ~200 mi of Sumter, SC (33.92, -80.34) ---------- */
 
@@ -5202,10 +5221,11 @@ document.getElementById('planLake')?.addEventListener('change', e=>{
     if(def && MAP_OK) MAP.setView([def.center[0], def.center[1]], def.center[2]||11);
     if(window.syncPlanRiverData) window.syncPlanRiverData();
   } else {
-    // Clear river-only values when returning to a lake.
     ['planRiverSafety','planRiverFlow','planRiverGauge','planRiverTemp','planRiverRise','planRiverSurgeEta','planRiverSchedule','planRiverSummary'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
     const lk = LAKE_DB[v];
     if(lk && MAP_OK) MAP.setView([lk.center[0], lk.center[1]], lk.center[2]||11);
+    // Trigger utility sync (Duke/USGS lake levels) when lake changes
+    if(window.syncUtilityData) setTimeout(window.syncUtilityData, 300);
   }
 });
 
@@ -6353,26 +6373,6 @@ async function fetchDukeDirect(){
 
 /* ---------- Init ---------- */
 initMap();
-DB.open().then(() => {
-  loadAllLayers();
-  restoreCharts();
-  restoreWorkingData();
-  loadSavedSpreads();
-  loadCatches();
-  populatePlanLakeDropdown();
-}).catch(e => {
-  console.warn('IndexedDB open failed, retrying once…', e);
-  setTimeout(() => {
-    if (DB && DB.db) {
-      loadAllLayers();
-      restoreCharts();
-      restoreWorkingData();
-      loadSavedSpreads();
-      loadCatches();
-      populatePlanLakeDropdown();
-    }
-  }, 1200);
-});
 
 // Auto-set date
 const d=new Date(); document.getElementById('planDate').value=d.toISOString().slice(0,10);
