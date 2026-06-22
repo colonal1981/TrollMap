@@ -1088,15 +1088,13 @@ const DB = {
   }
 };
 DB.open().then(() => {
-  console.log('[TrollMap] DB v5 open OK, restoring data...');
-  loadAllLayers();
+    loadAllLayers();
   restoreCharts();
   restoreWorkingData();
   loadSavedSpreads();
   loadCatches();
   populatePlanLakeDropdown();
-  console.log('[TrollMap] restore calls fired');
-}).catch(e => {
+  }).catch(e => {
   console.warn('[TrollMap] IndexedDB open failed, retrying once…', e);
   setTimeout(() => {
     if (DB && DB.db) {
@@ -2871,7 +2869,7 @@ function renderChartList(){
   const host=document.getElementById('chartLayers'); if(!host) return;
   const wrap=document.getElementById('chartLayersWrap');
   if(!CHARTS.length){ wrap.style.display='none'; return; }
-  wrap.style.display='block';
+  // Don't auto-show wrap — let user open via Charts button
   host.innerHTML=CHARTS.map((c,i)=>`
     <div style="display:flex;align-items:center;gap:5px;padding:3px 0;border-bottom:1px solid var(--line)">
       <input type="checkbox" ${c.visible?'checked':''} data-cv="${i}" title="show/hide">
@@ -3924,8 +3922,7 @@ function renderSpread(){
     `;
     tbody.appendChild(tr);
     const detailHtml = arigDetailRow(rod, i);
-    console.log('[spread] rod', i, 'lure:', rod.lure, 'detailHtml length:', detailHtml.length);
-    if(detailHtml){
+        if(detailHtml){
       const tbl = document.createElement('table');
       tbl.innerHTML = '<tbody>' + detailHtml + '</tbody>';
       const detailRow = tbl.querySelector('tr');
@@ -3934,18 +3931,17 @@ function renderSpread(){
   });
 
   tbody.querySelectorAll('input,select').forEach(el=>{
-    el.addEventListener('change', e=>{
+    if(el.dataset.f === 'trailerSize')     el.addEventListener('change', e=>{
       const i = +e.target.dataset.i;
       const f = e.target.dataset.f;
       if(SPREAD[i]){
         SPREAD[i][f] = e.target.value;
-        if(f === 'lure' || f === 'depth' || f === 'trailerSize'){
+        if(f === 'lure' || f === 'depth'){
           const spd = parseFloat(document.getElementById('planSpeed')?.value) || 2.4;
           SPREAD[i].lead = String(autoCalculateLead(SPREAD[i], spd));
           renderSpread();
-        } else if(f === 'lure'){
-          renderSpread();
         }
+        // trailerSize, arigWeight, jigWeight, color, notes — just save value, no re-render needed
       }
     });
   });
@@ -5227,6 +5223,9 @@ document.getElementById('planLake')?.addEventListener('change', e=>{
     } else {
       setTimeout(()=>{ document.getElementById('syncDukeBtn')?.click(); }, 300);
     }
+    // Auto-run lake intelligence and clarity forecast
+    if(window.syncLakeIntelData) setTimeout(window.syncLakeIntelData, 500);
+    if(window.syncClarityIntelData) setTimeout(window.syncClarityIntelData, 800);
   }
 });
 
@@ -5839,9 +5838,14 @@ document.querySelectorAll('#bottomNav button').forEach(btn=>{
     if(tab==='edit') renderEditTables();
     if(tab==='plan'){
       renderPlanStats();
-      // Auto-run worker data blocks every time plan tab opens
-      if(typeof window.syncUtilityData === 'function') setTimeout(window.syncUtilityData, 400);
-      else setTimeout(()=>{ document.getElementById('syncDukeBtn')?.click(); }, 400);
+      // Auto-run worker data blocks every time plan tab opens, but only if lake is selected
+      const planLakeVal = document.getElementById('planLake')?.value;
+      if(planLakeVal){
+        if(typeof window.syncUtilityData === 'function') setTimeout(window.syncUtilityData, 400);
+        else setTimeout(()=>{ document.getElementById('syncDukeBtn')?.click(); }, 400);
+        if(window.syncLakeIntelData) setTimeout(window.syncLakeIntelData, 600);
+        if(window.syncClarityIntelData) setTimeout(window.syncClarityIntelData, 900);
+      }
     }
   });
 });
