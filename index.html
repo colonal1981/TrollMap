@@ -9605,16 +9605,16 @@ if ('serviceWorker' in navigator) {
       let done = 0;
       for (const stem of stems) {
         try {
-          const pngR = await fetch(`${CLOUD_WORKER}/chartpacks/${lakeName}/contours/${stem}.png`);
-          const jsonR = await fetch(`${CLOUD_WORKER}/chartpacks/${lakeName}/contours/${stem}.georef.json`);
+          const pngR = await fetch(`${CLOUD_WORKER}/chartpacks/${lakeName}/contours/${stem}_contours.png`);
+          const jsonR = await fetch(`${CLOUD_WORKER}/chartpacks/${lakeName}/contours/${stem}_contours.georef.json`);
           if (!pngR.ok || !jsonR.ok) {
             console.warn('[cloud] failed to fetch', stem);
             continue;
           }
           const pngBlob = await pngR.blob();
           const jsonBlob = await jsonR.blob();
-          files.push(new File([pngBlob], `${stem}.png`, { type: 'image/png' }));
-          files.push(new File([jsonBlob], `${stem}.georef.json`, { type: 'application/json' }));
+          files.push(new File([pngBlob], `${stem}_contours.png`, { type: 'image/png' }));
+          files.push(new File([jsonBlob], `${stem}_contours.georef.json`, { type: 'application/json' }));
           done++;
           if (done % 4 === 0 || done === stems.length) {
             statusDiv.textContent = `Fetched ${done}/${stems.length}...`;
