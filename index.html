@@ -2950,6 +2950,7 @@ async function restoreCharts(){
   if(!DB||!DB.db) return;
   try {
     const all = await DB.getAll('charts');
+    console.log('[IDB] charts found:', all.length);
     if(!all||!all.length) return;
     all.forEach(c=>{
       if(c.type==='affine' && c.pts && c.natSize) addAffineChartLayer(c.name, c.img, c.natSize, c.pts, c.opacity);
@@ -3289,7 +3290,7 @@ async function renderLayerList(){
 async function loadAllLayers(){
   let all = [];
   if(DB && DB.db) {
-    try { all = await DB.getAll('layers'); } catch(e){}
+    try { all = await DB.getAll('layers'); console.log('[IDB] layers found:', all.length); } catch(e){ console.warn('[IDB] layers error:',e); }
   }
   for(const rec of all) addContourLayer(rec.name, rec.geo, rec.depthProp);
   renderLayerList();
@@ -3800,6 +3801,7 @@ function arigDetailRow(rod, i){
   const isARig = rod.lure && rod.lure.includes('Rig');
   const isSwimbait = rod.lure && rod.lure.toLowerCase().includes('swimbait');
   if(!isARig && !isSwimbait) return '';
+  console.log('[arig] showing detail row for:', rod.lure, 'isARig:', isARig, 'isSwimbait:', isSwimbait);
 
   const arigCols = isARig ? (
     '<td colspan="2">' +
@@ -3922,10 +3924,12 @@ function renderSpread(){
     `;
     tbody.appendChild(tr);
     const detailHtml = arigDetailRow(rod, i);
+    console.log('[spread] rod', i, 'lure:', rod.lure, 'detailHtml length:', detailHtml.length);
     if(detailHtml){
-      const dr = document.createElement('tbody');
-      dr.innerHTML = detailHtml;
-      tbody.appendChild(dr.firstElementChild);
+      const tbl = document.createElement('table');
+      tbl.innerHTML = '<tbody>' + detailHtml + '</tbody>';
+      const detailRow = tbl.querySelector('tr');
+      if(detailRow) tbody.appendChild(detailRow);
     }
   });
 
@@ -5493,10 +5497,11 @@ async function loadSavedSpreads(){
   if(!DB||!DB.db) return;
   try {
     const all = await DB.getAll('spreads');
+    console.log('[IDB] spreads found:', all.length);
     SAVED_SPREADS = {};
     all.forEach(s=>SAVED_SPREADS[s.name]=s.rods);
     refreshSpreadsSelect();
-  } catch(e){}
+  } catch(e){ console.warn('[IDB] loadSavedSpreads error:', e); }
 }
 
 function refreshSpreadsSelect(){
@@ -5564,6 +5569,7 @@ async function loadCatches(){
   if(!DB||!DB.db) return;
   try {
     const r = await DB.get('journal','catches');
+    console.log('[IDB] catches found:', r ? r.data?.length : 0);
     if(r) CATCHES = r.data||[];
     renderCatchLog();
   } catch(e){}
