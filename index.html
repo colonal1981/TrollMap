@@ -486,6 +486,7 @@
           </select>
           <button id="fitBtn" class="small" title="Fit map to tracking routes">⤢ Fit</button>
           <span id="zoomIndicator" class="small" title="Current map zoom — this is the zoom the i-Boating contour capture will use" style="background:var(--panel2);color:var(--accent);font-weight:700;padding:4px 8px;border-radius:4px;font-family:monospace;font-size:12px;min-width:54px;text-align:center">z —</span>
+          <span id="storageIndicator" class="small" title="Click for storage details" style="background:var(--panel2);color:var(--accent2);font-weight:700;padding:4px 8px;border-radius:4px;font-family:monospace;font-size:12px;cursor:pointer">storage —</span>
         </div>
 
         <!-- Working Georef Console (Unhidden when chart image loaded) -->
@@ -2578,6 +2579,50 @@ function initMap(){
   };
   MAP.on('zoom zoomend', updateZoomIndicator);
   updateZoomIndicator();
+
+  // Live storage indicator (toolbar pill next to zoom indicator).
+  const storageIndicator = document.getElementById('storageIndicator');
+  const fmtMB = (b) => b >= 1048576 ? `${(b / 1048576).toFixed(0)} MB` : `${(b / 1024).toFixed(0)} KB`;
+
+  async function updateStorageIndicator() {
+    if (!storageIndicator || !navigator.storage?.estimate) return;
+    try {
+      const est = await navigator.storage.estimate();
+      const quota = est.quota || 0;
+      const usage = est.usage || 0;
+      const avail = Math.max(0, quota - usage);
+      const persistent = await navigator.storage.persisted?.().catch(() => false);
+      storageIndicator.textContent = `storage ${fmtMB(avail)} free`;
+      storageIndicator.style.color = avail < 50 * 1048576 ? 'var(--warn)' : 'var(--accent2)';
+      storageIndicator.title =
+        `Total quota: ${fmtMB(quota)} · Used: ${fmtMB(usage)} · Free: ${fmtMB(avail)}` +
+        (persistent ? ' · Persistent: yes' : ' · Persistent: NO (click to request)');
+    } catch (e) {
+      storageIndicator.textContent = 'storage n/a';
+      storageIndicator.style.color = 'var(--muted)';
+    }
+  }
+  storageIndicator?.addEventListener('click', async () => {
+    const est = await navigator.storage.estimate().catch(() => ({}));
+    const quota = est.quota || 0;
+    const usage = est.usage || 0;
+    const avail = Math.max(0, quota - usage);
+    const persistent = await navigator.storage.persisted?.().catch(() => false);
+    const lines = [
+      `Quota:   ${fmtMB(quota)}`,
+      `Used:    ${fmtMB(usage)}`,
+      `Free:    ${fmtMB(avail)}`,
+      `Persistent: ${persistent ? 'yes' : 'no'}`,
+    ];
+    if (!persistent && navigator.storage.persist) {
+      const ok = await navigator.storage.persist();
+      lines.push(`Request persistent storage: ${ok ? 'GRANTED' : 'declined / already requested'}`);
+      updateStorageIndicator();
+    }
+    alert(lines.join('\n'));
+  });
+  updateStorageIndicator();
+  setInterval(updateStorageIndicator, 15000);
 }
 
 function setBase(kind){
@@ -9467,5 +9512,5 @@ if ('serviceWorker' in navigator) {
 <!-- Standalone Rivers tab removed: river data is now integrated into the Plan tab. -->
 
 <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a0dbbf447c4653b1',t:'MTc4MTgwMDk0NQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script defer src="https://static.cloudflareinsights.com/beacon.min.js/v833ccba57c9e4d2798f2e76cebdd09a11778172276447" integrity="sha512-57MDmcccJXYtNnH+ZiBwzC4jb2rvgVCEokYN+L/nLlmO8rfYT/gIpW2A569iJ/3b+0UEasghjuZH/ma3wIs/EQ==" data-cf-beacon='{"version":"2024.11.0","token":"1954b47c125f43f8b4338b3c4f804e4f","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a0f7b0feef820ce2',t:'MTc4MjA5Mzk2Mg=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</body>
 </html>
