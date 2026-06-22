@@ -417,6 +417,20 @@
         </div>
       </div>
 
+      <!-- ── CLOUD CHARTPACKS LIBRARY PANEL ── -->
+      <div id="cloudChartpacksPanel" style="display:none;position:absolute;top:60px;right:8px;z-index:650;background:rgba(11,22,35,.95);border:1px solid var(--accent);border-radius:10px;padding:10px 12px;font-size:12px;max-width:360px;max-height:80vh;overflow-y:auto;box-shadow:0 4px 16px rgba(0,0,0,.6)">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <span style="color:var(--accent);font-weight:700">📚 Cloud Chartpacks</span>
+          <div style="display:flex;gap:4px;align-items:center">
+            <button id="cloudChartpacksRefresh" style="background:none;border:1px solid var(--line);color:var(--accent);font-size:11px;padding:2px 8px;border-radius:4px;cursor:pointer" title="Refresh list from worker">↻</button>
+            <button id="cloudChartpacksClose" style="background:none;border:none;color:var(--muted);font-size:14px;padding:0 4px;cursor:pointer">✕</button>
+          </div>
+        </div>
+        <div style="color:var(--muted);font-size:11px;margin-bottom:8px;line-height:1.4">Pulled from your Cloudflare R2 chartpack library. Tap a lake to import its tiles into TrollMap.</div>
+        <div id="cloudChartpacksStatus" style="color:var(--muted);font-size:11px;margin-bottom:6px">Loading…</div>
+        <div id="cloudChartpacksList"></div>
+      </div>
+
       <!-- ── CONTOUR JOB EXPORT PANEL ── -->
       <div id="contourJobPanel" style="display:none;position:absolute;top:60px;right:8px;z-index:650;background:rgba(11,22,35,.95);border:1px solid var(--accent);border-radius:10px;padding:10px 12px;font-size:12px;max-width:320px;box-shadow:0 4px 16px rgba(0,0,0,.6)">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
@@ -461,6 +475,7 @@
           <button id="btnQuickdrawKey" class="small" style="color:#ffb703;border-color:#ffb703" title="Toggle Garmin ActiveCaptain 8-Band Tactical Color Depth Key">🌈 Quickdraw Key</button>
           <button id="btnCastingRings" class="small" title="Draw professional 60ft casting approach rings around Waypoints">⭕ Casting Rings</button>
           <button id="btnDrawContour" class="small" style="color:#76ff03;border-color:#76ff03" title="Draw a polygon outlining the lake area you want depth contours for. Click to add points, double-click (or click first point) to finish. Saves a job.json for the TrollMap build-contours pipeline.">✏️ Contour Area</button>
+          <button id="btnCloudChartpacks" class="small" style="color:#00e5ff;border-color:#00e5ff" title="Browse depth-contour chartpacks stored in your cloud library (R2 via Cloudflare Worker). Tap any lake to import its tiles into TrollMap.">📚 Cloud Chartpacks</button>
           <button id="btnTrackReverse" class="small" title="Toggle continuous loop — reverses selected track for return trolling pass">🔄 Loop Track</button>
           <button id="btnCustomVectors" class="small" title="Load private GeoJSON structure layer — brush piles, road beds, creek mouths">🗂 My Structure</button>
           <button id="btnFetchOsm" class="small" style="color:#76ff03;border-color:#76ff03" title="Direct browser pull from OpenStreetMap Overpass API — fetches submerged roadbeds, old bridges, historic foundations, and original river centerlines">🌐 Live OSM Structure</button>
@@ -9506,6 +9521,149 @@ if ('serviceWorker' in navigator) {
 
   console.log('[contour-job] export module ready');
 })();
+</script>
+
+<!-- ── Cloud Chartpacks library browser ── -->
+<script>
+(function initCloudChartpacks() {
+  if (!window.L) { setTimeout(initCloudChartpacks, 200); return; }
+
+  // Same worker endpoint as the upload path.
+  const CLOUD_WORKER = 'https://trollmap-worker.colonal1981.workers.dev';
+  const panel = () => document.getElementById('cloudChartpacksPanel');
+  const listEl = () => document.getElementById('cloudChartpacksList');
+  const statusEl = () => document.getElementById('cloudChartpacksStatus');
+
+  function fmtMB(b) { return b >= 1048576 ? `${(b/1048576).toFixed(1)} MB` : `${(b/1024).toFixed(0)} KB`; }
+
+  async function loadCloudList() {
+    statusEl().textContent = 'Loading from worker...';
+    statusEl().style.color = 'var(--muted)';
+    listEl().innerHTML = '';
+    try {
+      const r = await fetch(`${CLOUD_WORKER}/chartpacks/list`, { cache: 'no-store' });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const data = await r.json();
+      renderCloudList(data);
+    } catch (e) {
+      statusEl().textContent = `Could not reach worker: ${e.message}`;
+      statusEl().style.color = 'var(--bad)';
+    }
+  }
+
+  function renderCloudList(data) {
+    const list = data.chartpacks || [];
+    if (!list.length) {
+      statusEl().textContent = 'No chartpacks in your library yet.';
+      statusEl().style.color = 'var(--muted)';
+      return;
+    }
+    statusEl().textContent = `${list.length} lake${list.length===1?'':'s'} available · ${fmtMB(list.reduce((a,c)=>a+(c.bytes||0),0))} total`;
+    statusEl().style.color = 'var(--accent2)';
+
+    list.sort((a, b) => (b.bytes || 0) - (a.bytes || 0));  // biggest first
+    listEl().innerHTML = list.map(lake => {
+      const tileCount = (lake.files || []).filter(f => f.endsWith('.png')).length;
+      return `
+        <div data-lake="${lake.name}" style="background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:8px 10px;margin-bottom:6px">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+            <div style="flex:1;min-width:0">
+              <div style="color:var(--accent);font-weight:700;font-size:13px">${lake.name}</div>
+              <div style="color:var(--muted);font-size:11px;margin-top:2px">${tileCount} tile${tileCount===1?'':'s'} · ${fmtMB(lake.bytes||0)}</div>
+            </div>
+            <button data-import="${lake.name}" style="background:var(--accent2);color:#000;border:none;border-radius:4px;padding:4px 10px;font-weight:700;font-size:11px;cursor:pointer;flex-shrink:0">Import</button>
+          </div>
+          <div data-status="${lake.name}" style="color:var(--muted);font-size:10px;margin-top:4px;display:none"></div>
+        </div>
+      `;
+    }).join('');
+
+    // Wire up import buttons.
+    listEl().querySelectorAll('button[data-import]').forEach(btn => {
+      btn.addEventListener('click', () => importCloudChartpack(btn.dataset.import, btn));
+    });
+  }
+
+  async function importCloudChartpack(lakeName, btn) {
+    btn.disabled = true;
+    btn.textContent = '⏳';
+    const statusDiv = listEl().querySelector(`[data-status="${lakeName}"]`);
+    statusDiv.style.display = 'block';
+    statusDiv.textContent = 'Fetching tile index...';
+    statusDiv.style.color = 'var(--muted)';
+
+    try {
+      // Get list of tile basenames from index.json
+      const idxResp = await fetch(`${CLOUD_WORKER}/chartpacks/${lakeName}/index.json`, { cache: 'no-store' });
+      if (!idxResp.ok) throw new Error(`index.json: HTTP ${idxResp.status}`);
+      const idx = await idxResp.json();
+      const stems = idx.tiles || [];
+      if (!stems.length) throw new Error('No tiles in this chartpack');
+
+      statusDiv.textContent = `Fetching ${stems.length} tiles...`;
+      const files = [];
+      let done = 0;
+      for (const stem of stems) {
+        try {
+          const pngR = await fetch(`${CLOUD_WORKER}/chartpacks/${lakeName}/contours/${stem}.png`);
+          const jsonR = await fetch(`${CLOUD_WORKER}/chartpacks/${lakeName}/contours/${stem}.georef.json`);
+          if (!pngR.ok || !jsonR.ok) {
+            console.warn('[cloud] failed to fetch', stem);
+            continue;
+          }
+          const pngBlob = await pngR.blob();
+          const jsonBlob = await jsonR.blob();
+          files.push(new File([pngBlob], `${stem}.png`, { type: 'image/png' }));
+          files.push(new File([jsonBlob], `${stem}.georef.json`, { type: 'application/json' }));
+          done++;
+          if (done % 4 === 0 || done === stems.length) {
+            statusDiv.textContent = `Fetched ${done}/${stems.length}...`;
+          }
+        } catch (e) {
+          console.warn('[cloud] fetch error for', stem, e);
+        }
+      }
+
+      if (!files.length) throw new Error('Fetched 0 tiles');
+
+      // Feed into existing bulk-import path.
+      const dt = new DataTransfer();
+      files.forEach(f => dt.items.add(f));
+      const input = document.getElementById('batchImportInput');
+      if (!input) throw new Error('TrollMap bulk importer not found');
+      input.files = dt.files;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+
+      statusDiv.textContent = `✓ Imported ${files.length/2} tiles`;
+      statusDiv.style.color = 'var(--accent2)';
+      btn.textContent = '✓';
+      setTimeout(() => { btn.textContent = 'Import'; btn.disabled = false; }, 4000);
+    } catch (e) {
+      statusDiv.textContent = `✕ ${e.message}`;
+      statusDiv.style.color = 'var(--bad)';
+      btn.textContent = 'Retry';
+      btn.disabled = false;
+    }
+  }
+
+  // Wire up toolbar button.
+  document.getElementById('btnCloudChartpacks')?.addEventListener('click', () => {
+    panel().style.display = 'block';
+    loadCloudList();
+  });
+  document.getElementById('cloudChartpacksRefresh')?.addEventListener('click', loadCloudList);
+  document.getElementById('cloudChartpacksClose')?.addEventListener('click', () => {
+    panel().style.display = 'none';
+  });
+
+  // Auto-refresh list every 60s while panel is open.
+  setInterval(() => {
+    if (panel().style.display !== 'none') loadCloudList();
+  }, 60000);
+
+  console.log('[cloud-chartpacks] library browser ready');
+})();
+</script>
 </script>
 
 
