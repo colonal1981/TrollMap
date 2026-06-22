@@ -1088,14 +1088,16 @@ const DB = {
   }
 };
 DB.open().then(() => {
+  console.log('[TrollMap] DB v5 open OK, restoring data...');
   loadAllLayers();
   restoreCharts();
   restoreWorkingData();
   loadSavedSpreads();
   loadCatches();
   populatePlanLakeDropdown();
+  console.log('[TrollMap] restore calls fired');
 }).catch(e => {
-  console.warn('IndexedDB open failed, retrying once…', e);
+  console.warn('[TrollMap] IndexedDB open failed, retrying once…', e);
   setTimeout(() => {
     if (DB && DB.db) {
       loadAllLayers();
@@ -2964,13 +2966,7 @@ async function restoreCharts(){
       else if(c.bounds){ pts.push([c.bounds.north,c.bounds.west]); pts.push([c.bounds.south,c.bounds.east]); }
     });
     if(pts.length && MAP) MAP.fitBounds(pts,{padding:[20,20]});
-
-    // Make nudge toolbar appear for saved charts on reload
-    if (CHARTS.length > 0) {
-      ACTIVE_CHART = CHARTS.length - 1;
-      showNudgeToolbar();
-    }
-  } catch(e){}
+  } catch(e){ console.warn('restoreCharts failed:', e); }
 }
 
 document.getElementById('addChartBtn')?.addEventListener('click', commitWorkingChart);
@@ -3274,6 +3270,7 @@ function removeContourLayer(name){
 
 async function renderLayerList(){
   const host=document.getElementById('layerList');
+  if(!host) return;
   const names=Object.keys(CONTOUR_LAYERS);
   if(!names.length){ host.innerHTML='<p class="muted">No offline layers yet.</p>'; return; }
   let html='';
@@ -3803,44 +3800,40 @@ function arigDetailRow(rod, i){
   const isARig = rod.lure && rod.lure.includes('Rig');
   const isSwimbait = rod.lure && rod.lure.toLowerCase().includes('swimbait');
   if(!isARig && !isSwimbait) return '';
-  return `<tr class="arig-detail-row" data-arig="${i}" style="background:var(--panel2)">
-    <td></td>
-    <td colspan="2" style="font-size:11px;color:var(--accent);padding:4px 6px;vertical-align:middle">↳ ${isARig ? 'A-Rig Setup' : 'Swimbait Profile'}</td>
-    ${isARig ? `<td colspan="2">
-      <label style="font-size:10px;color:var(--muted)">Rig wire framework</label>
-      <select data-f="arigWeight" data-i="${i}" style="font-size:11px;width:100%">
-        <option value="">— select —</option>
-        ${ARIG_WEIGHTS.map(w=>`<option value="${w}" ${(rod.arigWeight||'')=== w?'selected':''}>${w}</option>`).join('')}
-      </select>
-    </td>
-    <td colspan="2">
-      <label style="font-size:10px;color:var(--muted)">Tactical Keel / Jighead Weights</label>
-      <select data-f="jigWeight" data-i="${i}" style="font-size:11.5px;width:100%;background:var(--panel2);color:var(--accent2);font-weight:700">
-        <option value="">— choose hybrid keel or uniform setup —</option>
-        <optgroup label="Tournament Hybrid Keels (Upright Tracking)">
-          <option value="1/8oz Top (×3) + 1/4oz Bottom (×2)" ${(rod.jigWeight||'')==='1/8oz Top (×3) + 1/4oz Bottom (×2)'?'selected':''}>1/8oz Top (×3) + 1/4oz Bottom Wires (×2) — Finesse Keel</option>
-          <option value="1/8oz Top (×3) + 3/8oz Bottom (×2)" ${(rod.jigWeight||'')==='1/8oz Top (×3) + 3/8oz Bottom (×2)'?'selected':''}>1/8oz Top (×3) + 3/8oz Bottom Wires (×2) — High Speed Keel</option>
-          <option value="3/16oz Top (×3) + 3/8oz Bottom (×2)" ${(rod.jigWeight||'')==='3/16oz Top (×3) + 3/8oz Bottom (×2)'?'selected':''}>3/16oz Top (×3) + 3/8oz Bottom Wires (×2) — River Ledge Keel</option>
-          <option value="1/4oz Top (×3) + 1/2oz Bottom (×2)" ${(rod.jigWeight||'')==='1/4oz Top (×3) + 1/2oz Bottom (×2)'?'selected':''}>1/4oz Top (×3) + 1/2oz Bottom Wires (×2) — Deep Channel Keel</option>
-        </optgroup>
-        <optgroup label="3-Hook Maximum Legal Rigs">
-          <option value="2 Dummy Blades Top + three 1/4oz Hook Baits Bottom" ${(rod.jigWeight||'')==='2 Dummy Blades Top + three 1/4oz Hook Baits Bottom'?'selected':''}>2 Teaser Blades Top + three 1/4oz Hook Baits Bottom</option>
-          <option value="2 Dummy Blades Top + two 1/8oz Mid + one 3/8oz Hook Bottom" ${(rod.jigWeight||'')==='2 Dummy Blades Top + two 1/8oz Mid + one 3/8oz Hook Bottom'?'selected':''}>2 Teaser Blades Top + two 1/8oz Mid + one 3/8oz Bottom</option>
-        </optgroup>
-        <optgroup label="Uniform Setup">
-          ${JIGHEAD_WEIGHTS.map(w=>`<option value="${w} × 5" ${(rod.jigWeight||'')=== (w+' × 5')?'selected':''}>${w} × 5 (Uniform)</option>`).join('')}
-        </optgroup>
-      </select>
-    </td>` : '<td colspan="4"></td>'}
-    <td colspan="3">
-      <label style="font-size:10px;color:var(--muted)">Swimbait Trailer Profile</label>
-      <select data-f="trailerSize" data-i="${i}" style="font-size:11px;width:100%">
-        <option value="">— select —</option>
-        ${TRAILER_SIZES.map(w=>`<option value="${w}" ${(rod.trailerSize||'')=== w?'selected':''}>${w}</option>`).join('')}
-      </select>
-    </td>
-    <td></td>
-  </tr>`;
+
+  const arigCols = isARig ? (
+    '<td colspan="2">' +
+    '<label style="font-size:10px;color:var(--muted)">Rig wire framework</label>' +
+    '<select data-f="arigWeight" data-i="' + i + '" style="font-size:11px;width:100%">' +
+    '<option value="">— select —</option>' +
+    ARIG_WEIGHTS.map(w=>'<option value="' + w + '" ' + ((rod.arigWeight||'')===w?'selected':'') + '>' + w + '</option>').join('') +
+    '</select></td>' +
+    '<td colspan="2">' +
+    '<label style="font-size:10px;color:var(--muted)">Tactical Keel / Jighead Weights</label>' +
+    '<select data-f="jigWeight" data-i="' + i + '" style="font-size:11.5px;width:100%;background:var(--panel2);color:var(--accent2);font-weight:700">' +
+    '<option value="">— choose hybrid keel or uniform setup —</option>' +
+    '<optgroup label="Tournament Hybrid Keels (Upright Tracking)">' +
+    ['1/8oz Top (×3) + 1/4oz Bottom (×2)','1/8oz Top (×3) + 3/8oz Bottom (×2)','3/16oz Top (×3) + 3/8oz Bottom (×2)','1/4oz Top (×3) + 1/2oz Bottom (×2)'].map(w=>'<option value="'+w+'" '+((rod.jigWeight||'')===w?'selected':'')+'>'+w+'</option>').join('') +
+    '</optgroup>' +
+    '<optgroup label="3-Hook Maximum Legal Rigs">' +
+    ['2 Dummy Blades Top + three 1/4oz Hook Baits Bottom','2 Dummy Blades Top + two 1/8oz Mid + one 3/8oz Hook Bottom'].map(w=>'<option value="'+w+'" '+((rod.jigWeight||'')===w?'selected':'')+'>'+w+'</option>').join('') +
+    '</optgroup>' +
+    '<optgroup label="Uniform Setup">' +
+    JIGHEAD_WEIGHTS.map(w=>'<option value="'+w+' × 5" '+((rod.jigWeight||'')===(w+' × 5')?'selected':'')+'>'+w+' × 5 (Uniform)</option>').join('') +
+    '</optgroup></select></td>'
+  ) : '<td colspan="4"></td>';
+
+  return '<tr class="arig-detail-row" data-arig="' + i + '" style="background:var(--panel2)">' +
+    '<td></td>' +
+    '<td colspan="2" style="font-size:11px;color:var(--accent);padding:4px 6px;vertical-align:middle">↳ ' + (isARig ? 'A-Rig Setup' : 'Swimbait Profile') + '</td>' +
+    arigCols +
+    '<td colspan="3">' +
+    '<label style="font-size:10px;color:var(--muted)">Swimbait Trailer Profile</label>' +
+    '<select data-f="trailerSize" data-i="' + i + '" style="font-size:11px;width:100%">' +
+    '<option value="">— select —</option>' +
+    TRAILER_SIZES.map(w=>'<option value="' + w + '" ' + ((rod.trailerSize||'')===w?'selected':'') + '>' + w + '</option>').join('') +
+    '</select></td>' +
+    '<td></td></tr>';
 }
 function lureSelect(val, i){
   const opts = LURE_PRESETS.map(v=>{
@@ -5225,7 +5218,11 @@ document.getElementById('planLake')?.addEventListener('change', e=>{
     const lk = LAKE_DB[v];
     if(lk && MAP_OK) MAP.setView([lk.center[0], lk.center[1]], lk.center[2]||11);
     // Trigger utility sync (Duke/USGS lake levels) when lake changes
-    if(window.syncUtilityData) setTimeout(window.syncUtilityData, 300);
+    if(window.syncUtilityData) {
+      setTimeout(window.syncUtilityData, 300);
+    } else {
+      setTimeout(()=>{ document.getElementById('syncDukeBtn')?.click(); }, 300);
+    }
   }
 });
 
@@ -5837,8 +5834,8 @@ document.querySelectorAll('#bottomNav button').forEach(btn=>{
     if(tab==='plan'){
       renderPlanStats();
       // Auto-run worker data blocks every time plan tab opens
-      if(typeof syncUtilityData === 'function') setTimeout(syncUtilityData, 400);
-      else if(typeof window.syncPlanRiverData === 'function') setTimeout(window.syncPlanRiverData, 400);
+      if(typeof window.syncUtilityData === 'function') setTimeout(window.syncUtilityData, 400);
+      else setTimeout(()=>{ document.getElementById('syncDukeBtn')?.click(); }, 400);
     }
   });
 });
