@@ -9541,7 +9541,10 @@ if ('serviceWorker' in navigator) {
     statusEl().style.color = 'var(--muted)';
     listEl().innerHTML = '';
     try {
-      const r = await fetch(`${CLOUD_WORKER}/chartpacks/list`, { cache: 'no-store' });
+      // Cache-bust every request so Cloudflare's edge cache can't serve a
+      // stale 404 from before the worker was redeployed.
+      const CB = `?v=${Date.now()}`;
+      const r = await fetch(`${CLOUD_WORKER}/chartpacks/list${CB}`, { cache: 'no-store' });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const data = await r.json();
       renderCloudList(data);
@@ -9594,7 +9597,7 @@ if ('serviceWorker' in navigator) {
 
     try {
       // Get list of tile basenames from index.json
-      const idxResp = await fetch(`${CLOUD_WORKER}/chartpacks/${lakeName}/index.json`, { cache: 'no-store' });
+      const idxResp = await fetch(`${CLOUD_WORKER}/chartpacks/${lakeName}/index.json${CB}`, { cache: 'no-store' });
       if (!idxResp.ok) throw new Error(`index.json: HTTP ${idxResp.status}`);
       const idx = await idxResp.json();
       const stems = idx.tiles || [];
@@ -9605,8 +9608,8 @@ if ('serviceWorker' in navigator) {
       let done = 0;
       for (const stem of stems) {
         try {
-          const pngR = await fetch(`${CLOUD_WORKER}/chartpacks/${lakeName}/contours/${stem}_contours.png`);
-          const jsonR = await fetch(`${CLOUD_WORKER}/chartpacks/${lakeName}/contours/${stem}_contours.georef.json`);
+          const pngR = await fetch(`${CLOUD_WORKER}/chartpacks/${lakeName}/contours/${stem}_contours.png${CB}`);
+          const jsonR = await fetch(`${CLOUD_WORKER}/chartpacks/${lakeName}/contours/${stem}_contours.georef.json${CB}`);
           if (!pngR.ok || !jsonR.ok) {
             console.warn('[cloud] failed to fetch', stem);
             continue;
