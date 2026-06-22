@@ -418,7 +418,7 @@
       </div>
 
       <!-- ── CONTOUR JOB EXPORT PANEL ── -->
-      <div id="contourJobPanel" style="display:none;position:absolute;top:60px;right:8px;z-index:650;background:rgba(11,22,35,.95);border:1px solid var(--accent);border-radius:10px;padding:10px 12px;font-size:12px;max-width:300px;box-shadow:0 4px 16px rgba(0,0,0,.6)">
+      <div id="contourJobPanel" style="display:none;position:absolute;top:60px;right:8px;z-index:650;background:rgba(11,22,35,.95);border:1px solid var(--accent);border-radius:10px;padding:10px 12px;font-size:12px;max-width:320px;box-shadow:0 4px 16px rgba(0,0,0,.6)">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
           <span style="color:var(--accent);font-weight:700">✏️ Contour Job Ready</span>
           <button id="contourJobClose" style="background:none;border:none;color:var(--muted);font-size:14px;padding:0 4px;cursor:pointer">✕</button>
@@ -427,11 +427,22 @@
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
           <input id="contourJobName" placeholder="job name (no .json)" style="flex:1;min-width:120px;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:4px;padding:4px 6px;font-size:11px">
         </div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
           <button id="contourJobSave" class="small primary" style="flex:1">💾 Save job.json</button>
           <button id="contourJobDiscard" class="small" style="color:var(--bad);border-color:var(--bad)">🗑 Discard</button>
         </div>
-        <p class="muted" style="margin:8px 0 0;font-size:11px;line-height:1.4">After saving, run in terminal:<br><code style="color:var(--accent)">py trollmap_build_contours.py build --job &lt;name&gt;.json --out chartpack_&lt;name&gt;</code></p>
+        <div id="contourJobServerRow" style="display:flex;align-items:center;gap:6px;margin-bottom:6px;font-size:11px">
+          <span id="contourServerDot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#888"></span>
+          <span id="contourServerStatus" style="color:var(--muted)">Server: checking…</span>
+        </div>
+        <div id="contourJobStatusRow" style="display:none;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:6px 8px;margin-bottom:6px;font-size:11px;line-height:1.5"></div>
+        <div id="contourJobRunRow" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px">
+          <button id="contourJobRun" class="small primary" style="flex:1;background:var(--accent2);color:#000;font-weight:700">🚀 Run capture now</button>
+          <button id="contourJobCancel" class="small" style="color:var(--bad);border-color:var(--bad);display:none">✕ Cancel</button>
+        </div>
+        <div id="contourJobImportRow" style="display:none">
+          <button id="contourJobImport" class="small primary" style="width:100%;background:var(--accent2);color:#000;font-weight:700">📥 Import chartpack</button>
+        </div>
       </div>
 
       <!-- ── PERSISTENT BOTTOM MAP CONTROL TOOLBAR ── -->
@@ -9228,6 +9239,228 @@ if ('serviceWorker' in navigator) {
   document.getElementById('contourJobClose')?.addEventListener('click', () => {
     document.getElementById('contourJobPanel').style.display = 'none';
   });
+
+  // ── Capture server integration (run capture now / auto-import) ──
+  const SERVER_BASE = 'http://127.0.0.1:8765';
+  let serverOnline = false;
+  let lastJob = null;        // last job dict (from save)
+  let statusPollTimer = null;
+
+  async function pingServer() {
+    const dot = document.getElementById('contourServerDot');
+    const label = document.getElementById('contourServerStatus');
+    try {
+      const r = await fetch(SERVER_BASE + '/status', { cache: 'no-store' });
+      if (!r.ok) throw new Error('status ' + r.status);
+      serverOnline = true;
+      dot.style.background = '#76ff03';
+      label.textContent = 'Server: online';
+      label.style.color = 'var(--accent2)';
+      return true;
+    } catch (e) {
+      serverOnline = false;
+      dot.style.background = '#ff5252';
+      label.textContent = 'Server: offline (run py trollmap_capture_server.py)';
+      label.style.color = 'var(--bad)';
+      return false;
+    }
+  }
+
+  // Cache the last-saved job so the Run button has something to send.
+  const _origDownload = downloadJobJson;
+  window.downloadJobJson = function(latlngs) {
+    const out = _origDownload(latlngs);
+    lastJob = out.job;
+    return out;
+  };
+
+  function setStatusRow(state, tiles, current, elapsed, error) {
+    const row = document.getElementById('contourJobStatusRow');
+    row.style.display = 'block';
+    let color = 'var(--muted)';
+    let text = '';
+    if (state === 'idle')    { color = 'var(--accent2)'; text = 'Server idle'; }
+    else if (state === 'running') {
+      color = 'var(--warn)';
+      text = `Capturing… tile ${current || '—'} (${tiles} done, ${elapsed}s)`;
+    }
+    else if (state === 'done') {
+      color = 'var(--accent2)';
+      text = `✓ Done — ${tiles} tiles in ${elapsed}s`;
+    }
+    else if (state === 'error') {
+      color = 'var(--bad)';
+      text = `✕ Error: ${error || 'unknown'}`;
+    }
+    row.innerHTML = `<div style="color:${color};font-weight:700">${text}</div>`;
+  }
+
+  async function pollStatus() {
+    try {
+      const r = await fetch(SERVER_BASE + '/status', { cache: 'no-store' });
+      if (!r.ok) return;
+      const s = await r.json();
+      setStatusRow(s.status, s.tiles_saved, s.current_tile, s.elapsed_seconds, s.error);
+
+      const runBtn = document.getElementById('contourJobRun');
+      const cancelBtn = document.getElementById('contourJobCancel');
+      const importRow = document.getElementById('contourJobImportRow');
+      const importBtn = document.getElementById('contourJobImport');
+
+      if (s.status === 'idle' || s.status === 'done' || s.status === 'error') {
+        runBtn.style.display = '';
+        cancelBtn.style.display = 'none';
+        if (statusPollTimer) { clearInterval(statusPollTimer); statusPollTimer = null; }
+      } else if (s.status === 'running') {
+        runBtn.style.display = 'none';
+        cancelBtn.style.display = '';
+      }
+
+      if (s.status === 'done' && s.chartpack_url) {
+        importBtn.dataset.url = s.chartpack_url;
+        importBtn.dataset.job = s.job_name || (lastJob && lastJob.name) || 'trollmap_job';
+        importRow.style.display = 'block';
+      } else {
+        importRow.style.display = 'none';
+      }
+    } catch (e) {
+      // server offline mid-poll; just try again next tick
+    }
+  }
+
+  document.getElementById('contourJobRun')?.addEventListener('click', async () => {
+    if (!lastJob) {
+      alert('Save the job first (💾 Save job.json) so we have something to send.');
+      return;
+    }
+    if (!(await pingServer())) {
+      alert('Capture server is offline.\n\nStart it in a terminal:\n  py trollmap_capture_server.py');
+      return;
+    }
+    try {
+      const r = await fetch(SERVER_BASE + '/capture', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(lastJob),
+      });
+      const j = await r.json();
+      if (!r.ok) {
+        alert('Server rejected: ' + (j.error || r.status));
+        return;
+      }
+      setStatusRow('running', 0, '—', 0, null);
+      if (statusPollTimer) clearInterval(statusPollTimer);
+      statusPollTimer = setInterval(pollStatus, 1500);
+    } catch (e) {
+      alert('Network error: ' + e.message);
+    }
+  });
+
+  document.getElementById('contourJobCancel')?.addEventListener('click', async () => {
+    try {
+      await fetch(SERVER_BASE + '/cancel', { method: 'POST' });
+    } catch (e) {}
+  });
+
+  // ── Auto-import chartpack via fetch + DataTransfer ──
+  async function importChartpackFromServer(urlPrefix, jobName) {
+    const importBtn = document.getElementById('contourJobImport');
+    importBtn.disabled = true;
+    importBtn.textContent = '⏳ Fetching tiles…';
+
+    // Try to discover available tiles by listing the chartpack.
+    // Fall back to "fetch known files" if /list doesn't know the path.
+    const contoursUrl = `${SERVER_BASE}${urlPrefix}contours/`;
+    const files = [];
+
+    // Get list of sidecar JSONs (they pair with PNGs of the same stem).
+    let tileNames = [];
+    try {
+      // We use a HEAD-style probe: try to fetch the manifest, which lists counts
+      // but not names. We'll get names from the chartpack.json "bounds" or by
+      // scanning. Simpler: ask the server to enumerate via /list, but that
+      // gives chartpacks, not files. So we'll do a discovery via index.
+      // For now, fetch chartpack.json which contains metadata only.
+      // We'll brute-force discover by trying common tile name patterns.
+      const meta = await fetch(`${SERVER_BASE}${urlPrefix}chartpack.json`).then(r => r.ok ? r.json() : null);
+      // No filenames in meta — fall back to fetching row/col pairs by index.
+      const total = meta?.tile_count || 0;
+      for (let i = 0; i < total; i++) {
+        // We don't know the row/col from index. Try a small id-space probe.
+        // Strategy: fetch a sentinel via /chartpack/<name>/contours/R000_C000_contours.png
+        // and stop when 404.
+      }
+      // Simpler reliable approach: list via sequential probing — fetch sidecar
+      // JSONs by index guess. Instead, expose a /list_files endpoint? Use /list
+      // which already returns chartpacks, not files.
+      //
+      // Simpler still: ask server for an index. We'll add this below.
+      const idxResp = await fetch(`${SERVER_BASE}${urlPrefix}index.json`, { cache: 'no-store' });
+      if (idxResp.ok) {
+        const idx = await idxResp.json();
+        tileNames = idx.tiles || [];
+      }
+    } catch (e) {
+      console.warn('[contour-job] index discovery failed', e);
+    }
+
+    if (!tileNames.length) {
+      // No index — abort with a clear message.
+      importBtn.disabled = false;
+      importBtn.textContent = '📥 Import chartpack';
+      alert('Could not enumerate chartpack tiles.\nUse 📂 Import Batch and pick chartpack_' + jobName + '\\contours\\ manually.');
+      return;
+    }
+
+    // Fetch every tile's PNG + sidecar JSON.
+    for (const stem of tileNames) {
+      try {
+        const pngR = await fetch(`${contoursUrl}${stem}.png`);
+        const jsonR = await fetch(`${contoursUrl}${stem}.georef.json`);
+        if (!pngR.ok || !jsonR.ok) continue;
+        const pngBlob = await pngR.blob();
+        const jsonBlob = await jsonR.blob();
+        files.push(new File([pngBlob], `${stem}.png`, { type: 'image/png' }));
+        files.push(new File([jsonBlob], `${stem}.georef.json`, { type: 'application/json' }));
+      } catch (e) {
+        console.warn('[contour-job] failed to fetch', stem, e);
+      }
+    }
+
+    if (!files.length) {
+      importBtn.disabled = false;
+      importBtn.textContent = '📥 Import chartpack';
+      alert('Fetched 0 tiles. Check the server and try again.');
+      return;
+    }
+
+    // Feed into the existing bulk-import path via DataTransfer.
+    const dt = new DataTransfer();
+    files.forEach(f => dt.items.add(f));
+    const input = document.getElementById('batchImportInput');
+    if (!input) {
+      alert('TrollMap bulk importer not found in this page.');
+      return;
+    }
+    input.files = dt.files;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+
+    importBtn.disabled = false;
+    importBtn.textContent = `✓ Imported ${files.length / 2} tiles`;
+    setTimeout(() => { importBtn.textContent = '📥 Import chartpack'; }, 4000);
+  }
+
+  document.getElementById('contourJobImport')?.addEventListener('click', e => {
+    const btn = e.currentTarget;
+    importChartpackFromServer(btn.dataset.url, btn.dataset.job);
+  });
+
+  // Ping server on load; ping every 5s while the panel is open.
+  pingServer();
+  setInterval(() => {
+    const panel = document.getElementById('contourJobPanel');
+    if (panel && panel.style.display !== 'none') pingServer();
+  }, 5000);
 
   console.log('[contour-job] export module ready');
 })();
