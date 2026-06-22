@@ -8340,12 +8340,47 @@ if ('serviceWorker' in navigator) {
 
   // ── Job Queue ──────────────────────────────────────────────────────────────
   let captureQueue = [];  // array of job objects
+  let queueMapLayers = [];  // Leaflet layers showing queued job footprints
   window._trollmapCaptureQueue = captureQueue;
   window._trollmapRenderQueue = renderQueue;
+
+  function clearQueueMap() {
+    queueMapLayers.forEach(l => { try { window.MAP.removeLayer(l); } catch(_){} });
+    queueMapLayers = [];
+  }
+
+  function drawQueueOnMap() {
+    clearQueueMap();
+    if (!window.MAP) return;
+    const colors = ['#00e5ff','#76ff03','#ffb703','#ff5252','#b39ddb','#4dd0e1','#f48fb1'];
+    captureQueue.forEach((job, idx) => {
+      const color = colors[idx % colors.length];
+      const b = job.bbox;
+      if (!b) return;
+      // Draw bbox rectangle
+      const rect = L.rectangle(
+        [[b.south, b.west],[b.north, b.east]],
+        { color, weight: 2, dashArray: '6 4', fillOpacity: 0.08, interactive: false }
+      ).addTo(window.MAP);
+      // Label at center
+      const lat = (b.north + b.south) / 2;
+      const lon = (b.west + b.east) / 2;
+      const label = L.marker([lat, lon], {
+        icon: L.divIcon({
+          className: '',
+          html: `<div style="background:rgba(11,22,35,.85);color:${color};border:1px solid ${color};border-radius:4px;padding:2px 6px;font-size:10px;font-weight:700;white-space:nowrap">${idx+1}. ${job.name||'unnamed'}</div>`,
+          iconAnchor: [0, 0]
+        }),
+        interactive: false
+      }).addTo(window.MAP);
+      queueMapLayers.push(rect, label);
+    });
+  }
 
   function renderQueue() {
     window._trollmapCaptureQueue = captureQueue;
     window._trollmapRenderQueue = renderQueue;
+    drawQueueOnMap();
     const list = document.getElementById('contourQueueList');
     const runBtn = document.getElementById('contourQueueRun');
     const clearBtn = document.getElementById('contourQueueClear');
@@ -8414,6 +8449,7 @@ if ('serviceWorker' in navigator) {
   // Clear queue
   document.getElementById('contourQueueClear')?.addEventListener('click', () => {
     captureQueue = [];
+    clearQueueMap();
     renderQueue();
   });
 
@@ -8428,6 +8464,7 @@ if ('serviceWorker' in navigator) {
     const clearBtn = document.getElementById('contourQueueClear');
     runBtn.disabled = true;
     runBtn.textContent = '⏳ Running queue…';
+    clearQueueMap();  // clear footprints when capture starts
 
     async function waitForIdle() {
       return new Promise((resolve) => {
