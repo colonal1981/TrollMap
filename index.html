@@ -314,16 +314,13 @@
       <select id="rampSelect" class="topbar-select" style="width:150px" title="Select Boat Launch" disabled>
         <option value="">-- Boat Ramp Launch --</option>
       </select>
-      <input type="text" id="coordSearch" class="topbar-input" placeholder="Lat, Lon" style="width:90px">
-      <button id="topSearchBtn" class="small" title="Search / Jump to location">🔍 Jump</button>
+      <button id="topSearchBtn" class="small" title="Jump to coordinates">🔍 Jump</button>
     </div>
 
     <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
       <label id="loadBtnLabel" class="btn-label" title="Load GPX, KML, GeoJSON">📂 Load<input id="fileInput" type="file" accept=".gpx,.txt,.xml,.geojson,.json,.kml" class="hidden"></label>
       <button id="newBtn" class="small">New</button>
       <button id="saveBtn" class="small primary">⬇ Save GPX</button>
-      <label id="imgBtnLabel" class="btn-label" title="Import offline chart screenshot to align">🖼 Align Chart<input id="imgInput" type="file" accept="image/*" class="hidden"></label>
-      <label id="batchImportLabel" class="btn-label" title="Bulk import georeferenced chart tiles (PNG + .georef.json pairs)">📂 Import Batch<input id="batchImportInput" type="file" accept=".png,.json" multiple class="hidden"></label>
     </div>
   </div>
   <!-- ===== SEARCH / JUMP MODAL ===== -->
@@ -488,11 +485,6 @@
           <select id="basemap" class="toolbar-select" style="width: 140px;background:var(--panel2);color:var(--accent);font-weight:700">
             <option value="sat">Satellite</option>
             <option value="street">Street</option>
-            <option value="topo">Topo</option>
-            <option value="dark">Dark</option>
-            <option value="usgsHybrid">USGS Sat+Topo HD</option>
-            <option value="opentopo">OpenTopo HD</option>
-            <option value="noaaMarine">NOAA Coastal Charts</option>
           </select>
           <select id="editMode" class="toolbar-select" style="width: 80px;">
             <option value="view">View</option>
@@ -504,199 +496,11 @@
           <span id="storageIndicator" class="small" title="Click for storage details" style="background:var(--panel2);color:var(--accent2);font-weight:700;padding:4px 8px;border-radius:4px;font-family:monospace;font-size:12px;cursor:pointer">storage —</span>
         </div>
 
-        <!-- Working Georef Console (Unhidden when chart image loaded) -->
-        <div id="toolbarGeorefGroup" class="image-work-console" style="display:none;align-items:center;gap:6px;flex-wrap:wrap;border-left:2px solid var(--accent);padding-left:8px">
-          <button id="georefBtn" class="small primary">📍 Align</button>
-          <button id="autoCropImgBtn" class="small" title="Auto-crop Navionics screenshot — removes status bar (top 80px) and zoom controls (right 120px)">✂ Auto-Crop</button>
-          <button id="addChartBtn" class="small primary">➕ Commit</button>
-          <button id="clearImgBtn" class="small warn">✕ Clear</button>
-          <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:4px;margin:0">
-            Op <input id="imgOpacity" type="range" min="0" max="100" value="40" style="width:60px">
-          </label>
-          <div id="nudgeGroup" style="display:flex;align-items:center;gap:2px">
-            <span style="font-size:10px;color:var(--muted)">Nudge</span>
-            <button id="nN" class="small">▲</button><button id="nS" class="small">▼</button>
-            <button id="nW" class="small">◀</button><button id="nE" class="small">▶</button>
-            <button id="nBig" class="small" title="Fine/coarse step">fine</button>
-            <button id="nWide" class="small">↔+</button><button id="nNarrow" class="small">↔−</button>
-            <button id="nTall" class="small">↕+</button><button id="nShort" class="small">↕−</button>
-            <button id="nRotL" class="small" title="Rotate chart counter-clockwise">⟲</button><button id="nRotR" class="small" title="Rotate chart clockwise">⟳</button>
-          </div>
-        </div>
-
         <div style="flex:1"></div>
         <div id="coordReadout2" class="toolbar-readout">-- , --</div>
       </div>
     </section>
-    <section class="panel" id="panel-sonar">
-      <div class="pad">
-        <div class="card">
-          <h3>📡 Import Sonar Logs / QDC CSV</h3>
-          <p class="muted">Drop a QDC CSV (X,Y,Depth_m) — points are auto-assigned to lakes by coordinates, so a single combined CSV works for all your lakes at once. Optionally select a lake first to process only that one.</p>
-          <label class="filebox" id="sonarDrop" style="display:block" title="Click to browse or drop QDC CSV / GPX logs">📁 Drop sonar GPX / QDC CSV here or click to browse</label>
-          <input type="file" id="sonarFile" class="hidden" accept=".gpx,.csv,.txt" multiple>
-          <div class="grid">
-            <div><label>Log name</label><input id="sonarName" placeholder="e.g. Murray 06-15-2026"></div>
-            <div><label>Depth sign (GPX)</label>
-              <select id="sonarSign">
-                <option value="neg">&lt;ele&gt; is negative depth</option>
-                <option value="pos">&lt;ele&gt; is positive depth</option>
-              </select>
-            </div>
-            <div><label>Grid cells</label><input id="gridSize" type="number" value="200" min="40" max="400" style="width:90px"></div>
-            <div><label><input type="checkbox" id="sonarSmooth" checked> Valid-only smooth</label></div>
-            <div><label><input type="checkbox" id="sonarFringe"> Fill 1-cell fringe</label></div>
-            <div><label><input type="checkbox" id="sonarMakeContours" checked> Generate contours</label></div>
-            <div><label><input type="checkbox" id="sonarShowGrid"> Show depth grid (boxes)</label></div>
-            <div><label>Contour interval (ft)</label><input id="contourInterval" type="number" value="2" min="1" max="20" style="width:80px"></div>
-            <div><label>Min / Max depth ft</label><div style="display:flex;gap:4px"><input id="contourMin" type="number" value="4" style="width:60px"><input id="contourMax" type="number" value="120" style="width:60px"></div></div>
-          </div>
-          <div class="row" style="margin-top:8px">
-            <button id="importSonarBtn" class="primary">Import & Build</button>
-            <span class="muted">Uses qdc_to_trollmap smoothing: valid-only box filter + 1-cell fringe fill, then Marching Squares.</span>
-          </div>
-          <div id="sonarMsg"></div>
-        </div>
-        <div class="card">
-          <h3 style="display:flex;justify-content:space-between;align-items:center">
-            Stored Sonar / Contour Layers
-            <button class="small warn" id="clearAllSonarBtn">🗑 Clear All Sonar</button>
-          </h3>
-          <div id="sonarList"><p class="muted">No sonar logs imported yet.</p></div>
-        </div>
-        <div class="card no-print">
-          <h3>How to get depth data</h3>
-          <div class="muted" style="line-height:1.5">
-            <b>Garmin Active Log GPX:</b> ActiveCaptain → sync → export track GPX (active log, not saved). Drag here.<br><br>
-            <b>QuickDraw Community CSV:</b> <code>pip install qdc-converter</code><br>
-            <code>qdc-converter -i Contours -o depths.csv -l 1</code><br>
-            Select the correct lake in TrollMap first, then drag the CSV. Points outside the lake bounds are dropped, depth meters → feet auto-converted, then gridded + contoured.<br><br>
-            The contour engine is a JS port of qdc_to_trollmap.py – Marching Squares with NaN boundary clipping, so contours stay in the lake.
-          </div>
-        </div>
-      </div>
-    </section>
-
     <!-- ===== CONTOURS ===== -->
-    <section class="panel" id="panel-contours">
-      <div class="pad">
-        <div class="card">
-          <h3>Import Contours / Layers</h3>
-          <p class="muted">Drag & drop GeoJSON, KML, GPX.</p>
-          <label class="filebox" id="dropZone" style="display:block" title="Click to browse or drop Bathymetry layers">📁 Drop GeoJSON / KML / GPX here or click</label>
-          <input type="file" id="layerFile" class="hidden" accept=".geojson,.json,.kml,.gpx">
-          <div class="row">
-            <label>Layer name</label><input id="layerName" placeholder="e.g. Murray 10ft contours" style="flex:1">
-          </div>
-          <div class="row">
-            <label>Simplify tolerance (deg)</label><input id="simplifyTol" type="number" value="0.00002" step="0.00001" style="width:110px">
-            <button id="importLayerBtn" class="primary">Import & Save</button>
-          </div>
-        </div>
-
-        <div class="card" id="scdnrLiveGisCard">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px">
-            <h3 style="margin:0;color:var(--accent)">🌐 SCDNR Authoritative Live GIS Portal Sync</h3>
-            <div style="display:flex;gap:6px;align-items:center">
-              <button id="importScdnrLiveBtn" class="small primary" title="Direct browser pull from authoritative ArcGIS Open Data API">
-                ⚡ Import Feed
-              </button>
-              <span id="scdnrGisStatus" style="font-size:11px;color:var(--muted);font-family:monospace">Ready</span>
-            </div>
-          </div>
-
-          <p class="muted" style="margin-top:0;margin-bottom:12px;line-height:1.4">
-            Direct Automated Browser Wi-Fi Pull. Instantly connects your active browser to South Carolina’s official ArcGIS Open Data GeoJSON APIs (100% open CORS) to download authoritative state fish attractors, public ramps, and reservoir contours directly into your offline storage database.
-          </p>
-
-          <div class="row" style="gap:10px">
-            <div style="flex:1;min-width:220px">
-              <label>Authoritative SCDNR Open Data Layer</label>
-              <select id="scdnrGisDatasetSelect" style="width:100%;padding:6px 8px;font-size:12.5px;background:var(--panel2);color:var(--accent);font-weight:700;border:1px solid var(--line);border-radius:6px">
-                <option value="">— choose authoritative SCDNR dataset feed —</option>
-                <option value="fish_attractors">📍 Official SCDNR State Fish Attractors &amp; Deep Habitat Dumps (Brush piles / tubes / PVC)</option>
-                <option value="boat_ramps">⛵ Authoritative SCDNR Public Boat Launch Facilities &amp; Access Ramps</option>
-                <option value="counties">🗺 Outline of South Carolina Counties &amp; Reservoir Bound Frames</option>
-              </select>
-            </div>
-            <div style="width:160px">
-              <label>Area Spatial Filter</label>
-              <select id="scdnrGisFilterLake" style="width:100%;padding:6px 8px;font-size:12px;background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:6px">
-                <option value="ALL">Statewide (All Waters)</option>
-                <option value="MURRAY">Lake Murray</option>
-                <option value="WATEREE">Lake Wateree</option>
-                <option value="SANTEE">Santee Cooper (Marion/Moultrie)</option>
-                <option value="KEOWEE">Lake Keowee / Jocassee</option>
-              </select>
-            </div>
-          </div>
-        </div>
-
-        <!-- ===== QGIS STUDIO ===== -->
-        <div class="card">
-          <h3 style="margin:0 0 8px;color:#76ff03">🗺️ QGIS Desktop Multi-Screenshot &amp; XYZ Tile Integration Studio</h3>
-          <p class="muted" style="margin-top:0;margin-bottom:12px;line-height:1.4">
-            If you georeference a batch of screenshots in desktop QGIS to build a seamless lake chart, you can bring them into TrollMap in three flawless ways:
-          </p>
-          
-          <div style="display:flex;flex-direction:column;gap:12px">
-            <!-- 1. QGIS GeoJSON Contour Vector Load -->
-            <div style="background:var(--panel2);padding:12px;border-radius:10px;border-left:4px solid var(--accent)">
-              <b style="color:var(--accent);font-size:13.5px">1. GeoJSON Vector Tracing (Best Offline PWA Option)</b>
-              <div class="muted" style="font-size:12px;margin-top:4px">
-                In QGIS, extract the raster contours to vector lines and export as a <code>.geojson</code> file. Drag &amp; drop that file into the <b>Import Contours</b> box above. It runs incredibly crisp at any zoom and stores permanently in browser memory forever.
-              </div>
-            </div>
-
-            <!-- 2. QGIS Single Image Bounding Box Load -->
-            <div style="background:var(--panel2);padding:12px;border-radius:10px;border-left:4px solid var(--warn)">
-              <b style="color:var(--warn);font-size:13.5px">2. Master Mosaic Image Bounding Box Load (Simplest Raster Option)</b>
-              <div class="muted" style="font-size:12px;margin-top:4px;margin-bottom:8px">
-                In QGIS, export your entire stitched mosaic as a single master JPG/PNG and write down its exact bounding box. Select the file below and enter the coordinates to align instantly:
-              </div>
-              <div class="row" style="gap:8px">
-                <label id="qgisImgLabel" class="btn-label small" style="background:var(--panel);color:var(--text);font-weight:700">📁 Select QGIS Master Chart<input type="file" id="qgisImgInput" accept="image/*" class="hidden"></label>
-                <input type="text" id="qgisSouthWest" placeholder="South, West e.g. 34.00, -81.40" style="width:180px;font-size:12px">
-                <input type="text" id="qgisNorthEast" placeholder="North, East e.g. 34.15, -81.10" style="width:180px;font-size:12px">
-                <button id="qgisImgCommitBtn" class="small primary" style="font-weight:700">📍 Commit to Chart DB</button>
-              </div>
-            </div>
-
-            <!-- 3. Connect Custom QGIS XYZ Tile Folder -->
-            <div style="background:var(--panel2);padding:12px;border-radius:10px;border-left:4px solid var(--accent2)">
-              <b style="color:var(--accent2);font-size:13.5px">3. GitHub XYZ Web Tile Folder (Elite Seamless HD Zoom)</b>
-              <div class="muted" style="font-size:12px;margin-top:4px;margin-bottom:8px">
-                In QGIS, run <i>Generate XYZ Tiles (Directory)</i> and push the folder to your GitHub repo (e.g. <code>/tiles/murray/</code>). Enter the URL template below to load as an elite tile overlay:
-              </div>
-              <div class="row" style="gap:8px">
-                <input type="text" id="qgisXyzName" placeholder="Layer name e.g. Murray Master HD" style="width:180px;font-size:12px">
-                <input type="text" id="qgisXyzUrl" placeholder="https://colonal1981.github.io/TrollMap/tiles/murray/{z}/{x}/{y}.png" style="flex:1;font-size:12px;font-family:monospace">
-                <button id="qgisXyzCommitBtn" class="small primary" style="background:var(--accent2);color:#000;font-weight:700">🔗 Add XYZ Overlay</button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="card">
-          <h3 style="display:flex;justify-content:space-between;align-items:center">
-            Stored Layers
-            <button class="small warn" id="clearAllLayersBtn">🗑 Clear All Layers</button>
-          </h3>
-          <div id="layerList"><p class="muted">No offline layers yet.</p></div>
-        </div>
-
-        <div class="card">
-          <h3>Data Sources</h3>
-          <div class="muted" style="line-height:1.5">
-            SCDNR GIS – lake bathymetry shapefiles.<br>
-            GA DNR / NC OneMap – reservoir contours.<br>
-            USGS National Map – NHD outlines.<br>
-            Use the included <code>qdc_to_trollmap.py</code> for offline bulk conversion, or use the Sonar tab contour generator for in-browser conversion.
-          </div>
-        </div>
-      </div>
-    </section>
-
     <!-- ===== GENERATE ===== -->
     <section class="panel" id="panel-generate">
       <div class="pad">
@@ -1156,9 +960,6 @@ First thunder → nearest shore immediately</textarea>
             <button id="printPlanBtn">🖨 Print Plan</button>
             <button id="exportPlanHtmlBtn">⬇ HTML</button>
             <button id="exportPlanJsonBtn">⬇ JSON</button>
-            <button id="exportGarminBtn">🎣 Garmin GPX</button>
-            
-            <label id="importPlanBtnLabel" class="btn-label ghost">📂 Import JSON<input type="file" id="importPlanFile" accept=".json" class="hidden"></label>
           </div>
 
         </div><!-- /builder -->
@@ -1190,8 +991,6 @@ First thunder → nearest shore immediately</textarea>
 
   <nav id="bottomNav">
     <button data-tab="map" class="active"><span class="ico">🗺️</span>Map</button>
-    <button data-tab="sonar"><span class="ico">📡</span>Sonar</button>
-    <button data-tab="contours"><span class="ico">📐</span>Contours</button>
     <button data-tab="generate"><span class="ico">🌀</span>Generate</button>
     <button data-tab="edit"><span class="ico">✏️</span>Edit</button>
     <button data-tab="plan"><span class="ico">🎣</span>Plan</button>
@@ -1215,7 +1014,7 @@ const DB = {
   async open() {
     return new Promise((res, rej) => {
       if (!window.indexedDB) return rej("IndexedDB not supported");
-      const req = indexedDB.open('TrollMapDB', 4);
+      const req = indexedDB.open('TrollMapDB', 5);
       req.onupgradeneeded = e => {
         const db = e.target.result;
         if(!db.objectStoreNames.contains('layers')) db.createObjectStore('layers', {keyPath:'name'});
@@ -1225,6 +1024,7 @@ const DB = {
         if(!db.objectStoreNames.contains('sonar')) db.createObjectStore('sonar', {keyPath:'name'});
         if(!db.objectStoreNames.contains('plans')) db.createObjectStore('plans', {keyPath:'id', autoIncrement:true});
         if(!db.objectStoreNames.contains('spreads')) db.createObjectStore('spreads', {keyPath:'name'});
+        if(!db.objectStoreNames.contains('journal')) db.createObjectStore('journal', {keyPath:'name'});
       };
       req.onsuccess = e => { this.db = e.target.result; res(this.db); };
       req.onerror = e => rej(e);
@@ -1727,7 +1527,6 @@ const LAKE_DB = {
 
 const lakeSelect = document.getElementById('lakeSelect');
 const rampSelect = document.getElementById('rampSelect');
-const coordSearch = document.getElementById('coordSearch');
 
 window.getUniversalLakeNames = function getUniversalLakeNames(){
   const list = new Set(Object.keys(LAKE_DB));
@@ -1824,16 +1623,13 @@ if(rampSelect) {
   });
 }
 
-if(coordSearch) {
-  coordSearch.addEventListener('change', function() {
-    const val = this.value.trim(); if (!val || !MAP_OK) return;
-    const coordMatch = val.match(/^(-?\d+(\.\d+)?)[,\s]+(-?\d+(\.\d+)?)$/);
-    if (coordMatch) {
-        MAP.setView([parseFloat(coordMatch[1]), parseFloat(coordMatch[3])], 16);
-        this.blur();
-    }
-  });
-}
+document.getElementById('topSearchBtn')?.addEventListener('click', () => {
+  const val = prompt('Jump to coordinates (Lat, Lon):');
+  if (!val || !MAP_OK) return;
+  const m = val.trim().match(/^(-?\d+(\.\d+)?)[,\s]+(-?\d+(\.\d+)?)$/);
+  if (m) MAP.setView([parseFloat(m[1]), parseFloat(m[3])], 16);
+  else alert('Enter coordinates as: 34.5169, -81.0031');
+});
 
 /* ---------- Data model ---------- */
 let DATA = { waypoints:[], tracks:[] };
@@ -1845,18 +1641,16 @@ const TILES = {
   sat: { url:'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr:'Esri' },
   satLabels: { url:'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', attr:'Esri Labels' },
   street: { url:'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', attr:'OSM' },
-  topo: { url:'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', attr:'Esri' },
-  dark: { url:'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', attr:'CartoDB' },
-  usgsHybrid: { url:'https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryTopo/MapServer/tile/{z}/{y}/{x}', attr:'USGS National Map' },
-  opentopo: { url:'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', attr:'OpenTopoMap' },
-  noaaMarine: { url:'https://gis.charttools.noaa.gov/arcgis/rest/services/MarineChart_Services/NOAACharts/MapServer/WMTS/tile/1.0.0/MarineChart_Services_NOAACharts/default/default028mm/{z}/{y}/{x}.png', attr:'NOAA Coastal Navigation Charts (coastal/Great Lakes only)' }
 };
 
 let MAP=null, LAYER=null, BASE=null, BASE_LABELS=null, MAP_OK=false;
 let GPS_WATCH=null, GPS_MARKER=null, FOLLOW_GPS=false, RECORDING=false, GPS_TRACK=[], GPS_LINE=null;
 let IMG_OVERLAY=null, IMG_DATAURL=null, IMG_NATSIZE=null, IMG_BOUNDS=null, IMG_ROTATION=0, IMG_AFFINE=null, IMG_AFFINE_PTS=null, GEOREF=null, georefState=null;
-let CONTOUR_LAYERS = {}; 
-let SONAR_LAYERS = {}; 
+let CONTOUR_LAYERS = {};
+// Sonar tab removed — stubs prevent errors from any lingering references
+function addSonarLayer(){} 
+function renderSonarList(){}
+function clearAllSonar(){}
 let pickTarget = null; 
 
 /* ---------- Helpers ---------- */
@@ -2097,470 +1891,6 @@ function geoJSONToLines(geo){
   return out;
 }
 
-/* ---------- Sonar log parser ---------- */
-function parseSonarGPX(text, sign){
-  const doc=new DOMParser().parseFromString(text,'application/xml');
-  if(doc.querySelector('parsererror')) throw new Error('Invalid GPX');
-  const all=[...doc.getElementsByTagName('*')];
-  const pts=[];
-  for(const el of all){
-    const ln=localName(el.tagName);
-    if(ln==='trkpt'||ln==='wpt'){
-      const lat=parseFloat(el.getAttribute('lat')), lon=parseFloat(el.getAttribute('lon'));
-      let depth=NaN;
-      for(const c of el.children){
-        if(localName(c.tagName)==='ele'){
-          depth=parseFloat(c.textContent)||NaN; break;
-        }
-      }
-      if(!isNaN(lat)&&!isNaN(lon)&&!isNaN(depth)){
-        const d = sign==='neg' ? Math.abs(depth) : depth;
-        pts.push({lat,lon,depth:d});
-      }
-    }
-  }
-  return pts;
-}
-
-/* ---------- QDC CSV Parser (robust) ---------- */
-function parseSonarCSV(text, lakeBounds){
-  text = text.replace(/^\uFEFF/, ''); 
-  const lines = text.split(/\r?\n/);
-  
-  let xi = -1, yi = -1, zi = -1;
-  const pts = [];
-  let skippedBounds = 0;
-
-  for(let i=0; i<lines.length; i++){
-    const line = lines[i].trim();
-    if(!line) continue;
-    const cols = line.split(',');
-
-    if (xi === -1) {
-      const h = cols.map(c => c.replace(/["']/g, '').trim().toLowerCase());
-      xi = h.findIndex(c => c === 'x' || c === 'lon' || c === 'longitude');
-      yi = h.findIndex(c => c === 'y' || c === 'lat' || c === 'latitude');
-      zi = h.findIndex(c => c.includes('depth') || c === 'z' || c.includes('elev'));
-      if (xi !== -1 && yi !== -1 && zi !== -1) continue;
-    }
-
-    if (xi !== -1 && yi !== -1 && zi !== -1 && cols.length >= 3) {
-      const lon = parseFloat(cols[xi].replace(/["']/g, ''));
-      const lat = parseFloat(cols[yi].replace(/["']/g, ''));
-      let depth = parseFloat(cols[zi].replace(/["']/g, ''));
-
-      if (!isNaN(lat) && !isNaN(lon) && !isNaN(depth)) {
-        if (lakeBounds) {
-          const [minLat, minLon] = lakeBounds[0];
-          const [maxLat, maxLon] = lakeBounds[1];
-          if (lat < minLat || lat > maxLat || lon < minLon || lon > maxLon) {
-            skippedBounds++;
-            continue;
-          }
-        }
-        if (depth !== 0) {
-          depth = Math.abs(depth);
-          pts.push({lat, lon, depth: depth * 3.28084}); // m to ft
-        }
-      }
-    }
-  }
-  console.log(`CSV parse: ${pts.length} pts in bounds, ${skippedBounds} out of bounds filtered.`);
-  return pts;
-}
-
-/* ---------- Depth Grid + Smoothing (qdc_to_trollmap port) ---------- */
-function buildDepthGrid(pts, n, doSmooth=true, doFringe=true){
-  if(!pts.length) return null;
-  let minLat=Infinity, maxLat=-Infinity, minLon=Infinity, maxLon=-Infinity;
-  pts.forEach(p=>{
-    minLat=Math.min(minLat,p.lat); maxLat=Math.max(maxLat,p.lat);
-    minLon=Math.min(minLon,p.lon); maxLon=Math.max(maxLon,p.lon);
-  });
-  const dLat=(maxLat-minLat)/n, dLon=(maxLon-minLon)/n;
-  if(dLat<=0 || dLon<=0) return null;
-
-  // bin
-  const sum = Array.from({length:n},()=>Array(n).fill(0));
-  const cnt = Array.from({length:n},()=>Array(n).fill(0));
-  pts.forEach(p=>{
-    const ix=Math.min(n-1,Math.max(0,Math.floor((p.lon-minLon)/dLon)));
-    const iy=Math.min(n-1,Math.max(0,Math.floor((maxLat-p.lat)/dLat)));
-    sum[iy][ix]+=p.depth; cnt[iy][ix]++;
-  });
-  let grid = sum.map((row,y)=> row.map((s,x)=> cnt[y][x]>0 ? s/cnt[y][x] : NaN));
-  let has_data = cnt.map(row=> row.map(c=>c>0));
-
-  // Minimum point count threshold — require at least 10 points per cell.
-  // At 200x200 grid over Wateree, each cell is ~150ft across.
-  // Sparse cells near shore (boat ramps, dock recordings) get dropped.
-  const MIN_PTS = 10;
-  for(let y=0;y<n;y++){ for(let x=0;x<n;x++){
-    if(cnt[y][x] > 0 && cnt[y][x] < MIN_PTS){
-      grid[y][x] = NaN;
-      has_data[y][x] = false;
-    }
-  }}
-
-  // valid-only box smooth (3x3)
-  if(doSmooth){
-    const smooth = Array.from({length:n},()=>Array(n).fill(NaN));
-    for(let y=0;y<n;y++){
-      for(let x=0;x<n;x++){
-        if(!has_data[y][x]) continue;
-        let vsum=0, vcnt=0;
-        for(let dy=-1;dy<=1;dy++){ for(let dx=-1;dx<=1;dx++){
-          let ny=y+dy, nx=x+dx;
-          if(ny<0||ny>=n||nx<0||nx>=n) continue;
-          if(has_data[ny][nx] && !isNaN(grid[ny][nx])){ vsum+=grid[ny][nx]; vcnt++; }
-        }}
-        smooth[y][x] = vcnt? vsum/vcnt : grid[y][x];
-      }
-    }
-    grid = smooth;
-  }
-
-  // fringe fill – dilate 1 cell
-  if(doFringe){
-    const dilated = has_data.map(row=>row.slice());
-    for(let y=0;y<n;y++){ for(let x=0;x<n;x++){ if(has_data[y][x]){
-      for(let dy=-1;dy<=1;dy++){ for(let dx=-1;dx<=1;dx++){
-        let ny=y+dy, nx=x+dx;
-        if(ny>=0&&ny<n&&nx>=0&&nx<n) dilated[ny][nx]=true;
-      }}
-    }}}
-    // nearest neighbor fill for fringe
-    const filled = grid.map(row=>row.slice());
-    for(let y=0;y<n;y++){ for(let x=0;x<n;x++){
-      if(dilated[y][x] && !has_data[y][x]){
-        // search nearest real cell within radius 3
-        let best=NaN, bestd=1e9;
-        for(let ry=Math.max(0,y-3); ry<=Math.min(n-1,y+3); ry++){
-          for(let rx=Math.max(0,x-3); rx<=Math.min(n-1,x+3); rx++){
-            if(has_data[ry][rx] && !isNaN(grid[ry][rx])){
-              let d=(ry-y)*(ry-y)+(rx-x)*(rx-x);
-              if(d<bestd){ bestd=d; best=grid[ry][rx]; }
-            }
-          }
-        }
-        if(!isNaN(best)) filled[y][x]=best;
-      }
-    }}
-    grid = filled;
-    has_data = dilated;
-  }
-
-  // Force the outer 2-cell border ring to NaN AFTER all smoothing/fill.
-  // This must run last — fringe fill would otherwise re-populate border cells.
-  // Without this, marching squares traces contours to the bounding box edge
-  // which is land, not shoreline.
-  const BORDER = 2;
-  for(let x=0;x<n;x++){
-    for(let b=0;b<BORDER;b++){
-      grid[b][x]=NaN; has_data[b][x]=false;
-      grid[n-1-b][x]=NaN; has_data[n-1-b][x]=false;
-    }
-  }
-  for(let y=0;y<n;y++){
-    for(let b=0;b<BORDER;b++){
-      grid[y][b]=NaN; has_data[y][b]=false;
-      grid[y][n-1-b]=NaN; has_data[y][n-1-b]=false;
-    }
-  }
-
-  // Build GeoJSON grid cells for visualization
-  const features=[];
-  for(let iy=0;iy<n;iy++){
-    for(let ix=0;ix<n;ix++){
-      const v = grid[iy][ix];
-      if(isNaN(v)) continue;
-      const w=minLon+ix*dLon, e=w+dLon;
-      const n2=maxLat-iy*dLat, s=n2-dLat;
-      features.push({
-        type:'Feature',
-        geometry:{type:'Polygon',coordinates:[[[w,n2],[e,n2],[e,s],[w,s],[w,n2]]]},
-        properties:{depth: Math.round(v)}
-      });
-    }
-  }
-  return {type:'FeatureCollection', features, meta:{minLat,maxLat,minLon,maxLon,n, grid, has_data }};
-}
-
-/* ---------- Marching Squares contouring (JS port) ---------- */
-function marchingSquares(grid, level){
-  const rows = grid.length, cols = grid[0].length;
-  function interp(v0,v1,p0,p1){
-    const dv=v1-v0;
-    return Math.abs(dv)<1e-10 ? (p0+p1)/2 : p0 + (level-v0)/dv*(p1-p0);
-  }
-  const ET = {
-    0:[],15:[],
-    1:[[3,0]],14:[[0,3]],
-    2:[[0,1]],13:[[1,0]],
-    3:[[3,1]],12:[[1,3]],
-    4:[[1,2]],11:[[2,1]],
-    5:[[3,2],[1,0]],10:[[0,3],[2,1]],
-    6:[[0,2]],9:[[2,0]],
-    7:[[3,2]],8:[[2,3]]
-  };
-  const segments=[];
-  for(let r=0;r<rows-1;r++){
-    for(let c=0;c<cols-1;c++){
-      const vbl=grid[r][c], vbr=grid[r][c+1], vtr=grid[r+1][c+1], vtl=grid[r+1][c];
-      if(isNaN(vbl)||isNaN(vbr)||isNaN(vtr)||isNaN(vtl)) continue;
-      const cs = (vbl>=level?1:0)|(vbr>=level?2:0)|(vtr>=level?4:0)|(vtl>=level?8:0);
-      if(cs===0||cs===15) continue;
-      const e0=[interp(vbl,vbr,c,c+1), r];
-      const e1=[c+1, interp(vbr,vtr,r,r+1)];
-      const e2=[interp(vtl,vtr,c,c+1), r+1];
-      const e3=[c, interp(vbl,vtl,r,r+1)];
-      const edges=[e0,e1,e2,e3];
-      (ET[cs]||[]).forEach(([ea,eb])=> segments.push([edges[ea], edges[eb]]));
-    }
-  }
-  if(!segments.length) return [];
-  // stitch
-  function K(pt){ return Math.round(pt[0]*1000)/1000+','+Math.round(pt[1]*1000)/1000; }
-  const adj={};
-  segments.forEach((seg,i)=>{
-    const ka=K(seg[0]), kb=K(seg[1]);
-    (adj[ka]=adj[ka]||[]).push(i);
-    (adj[kb]=adj[kb]||[]).push(i);
-  });
-  const used = new Array(segments.length).fill(false);
-  const polylines=[];
-  for(let start=0; start<segments.length; start++){
-    if(used[start]) continue;
-    used[start]=true;
-    let a=segments[start][0], b=segments[start][1];
-    const chain=[a,b];
-    for(const forward of [true,false]){
-      while(true){
-        const tip = forward ? chain[chain.length-1] : chain[0];
-        const cand = (adj[K(tip)]||[]).filter(i=>!used[i]);
-        if(!cand.length) break;
-        const i=cand[0]; used[i]=true;
-        const na=segments[i][0], nb=segments[i][1];
-        const pt = K(na)===K(tip) ? nb : na;
-        if(forward) chain.push(pt); else chain.unshift(pt);
-      }
-    }
-    if(chain.length>=2) polylines.push(chain);
-  }
-  return polylines;
-}
-
-function gridToLonLat(col,row,meta){
-  const {minLon,maxLon,minLat,maxLat,n} = meta;
-  const lon = minLon + col/(n-1)*(maxLon-minLon);
-  const lat = minLat + (n-1-row)/(n-1)*(maxLat-minLat);
-  return [lon, lat];
-}
-
-function contourGrid(gridObj, interval, minD, maxD){
-  const {grid, minLon, maxLon, minLat, maxLat, n} = gridObj.meta;
-  // grid is row0 = north, need flip for marching squares expecting row+ south?
-  // Our buildDepthGrid stores iy=0 at north. Marching squares expects increasing row south.
-  // So reverse rows
-  const g2 = grid.slice().reverse();
-  let maxVal = -Infinity;
-  g2.forEach(row=> row.forEach(v=>{ if(!isNaN(v)) maxVal=Math.max(maxVal,v); }));
-  const maxDepth = Math.min(maxD, isFinite(maxVal)?maxVal:maxD);
-  const features=[];
-  for(let level=minD; level<=maxDepth+1e-6; level+=interval){
-    const chains = marchingSquares(g2, level);
-    chains.forEach(chain=>{
-      const coords = chain.map(pt=>{
-        const [col,row]=pt;
-        const lon = minLon + col/(n-1)*(maxLon-minLon);
-        const lat = minLat + row/(n-1)*(maxLat-minLat);
-        return [parseFloat(lon.toFixed(7)), parseFloat(lat.toFixed(7))];
-      });
-      if(coords.length>=2){
-        features.push({
-          type:'Feature',
-          geometry:{type:'LineString', coordinates: coords},
-          properties:{depth: Math.round(level), depth_ft: Math.round(level), label: Math.round(level)+'ft'}
-        });
-      }
-    });
-  }
-  return {type:'FeatureCollection', features};
-}
-
-/* ---------- Sonar import handler ---------- */
-let _sonarImporting = false;
-async function handleSonarFiles(files){
-  if(_sonarImporting){ console.warn('Import already in progress, ignoring duplicate trigger'); return; }
-  _sonarImporting = true;
-  try { await _handleSonarFiles(files); } finally { _sonarImporting = false; }
-}
-async function _handleSonarFiles(files){
-  const lakeSelectEl = document.getElementById('lakeSelect');
-  const selectedLake = lakeSelectEl ? lakeSelectEl.value : null;
-  const msgEl = document.getElementById('sonarMsg');
-  function say(t, ok){ msgEl.innerHTML = ok? `<div class="okbox">${esc(t)}</div>` : `<div class="warnbox">${esc(t)}</div>`; }
-
-  const nameBase = document.getElementById('sonarName').value.trim();
-  const gridSize = parseInt(document.getElementById('gridSize').value)||140;
-  const doSmooth = document.getElementById('sonarSmooth').checked;
-  const doFringe = document.getElementById('sonarFringe').checked;
-  const makeContours = document.getElementById('sonarMakeContours').checked;
-  const contourInterval = parseFloat(document.getElementById('contourInterval').value)||2;
-  const contourMin = parseFloat(document.getElementById('contourMin').value)||4;
-  const contourMax = parseFloat(document.getElementById('contourMax').value)||120;
-
-  // Read all files into raw points (no bounds filter yet)
-  let allPts = [];
-  for(const f of files){
-    try{
-      const text = await f.text();
-      if(f.name.match(/\.(csv|txt)$/i)){
-        const pts = parseSonarCSV(text, null); // null = no bounds filter
-        allPts = allPts.concat(pts);
-      } else if(f.name.match(/\.gpx$/i)){
-        const sign = document.getElementById('sonarSign').value;
-        allPts = allPts.concat(parseSonarGPX(text, sign));
-      }
-    }catch(err){ console.warn('File error', f.name, err); }
-  }
-
-  if(!allPts.length){ say('No valid depth points found. Check file format.', false); return; }
-  console.log(`Total raw points loaded: ${allPts.length}`);
-
-  // Auto-assign each point to a lake by bounding box
-  // Points matching multiple lakes go to the first match (lakes ordered by area, smaller first)
-  const lakeOrder = Object.keys(LAKE_DB).sort((a,b)=>{
-    const ba=LAKE_DB[a].bounds, bb=LAKE_DB[b].bounds;
-    const areaA=(ba[1][0]-ba[0][0])*(ba[1][1]-ba[0][1]);
-    const areaB=(bb[1][0]-bb[0][0])*(bb[1][1]-bb[0][1]);
-    return areaA - areaB; // smaller lakes first so they're checked before larger ones
-  });
-
-  const buckets = {}; // lakeName → [pts]
-  let unmatched = 0;
-  allPts.forEach(p=>{
-    let matched = false;
-    for(const lakeName of lakeOrder){
-      const b = LAKE_DB[lakeName].bounds;
-      if(p.lat>=b[0][0] && p.lat<=b[1][0] && p.lon>=b[0][1] && p.lon<=b[1][1]){
-        (buckets[lakeName] = buckets[lakeName]||[]).push(p);
-        matched = true;
-        break;
-      }
-    }
-    if(!matched) unmatched++;
-  });
-
-  const matchedLakes = Object.keys(buckets);
-  if(!matchedLakes.length){ say('No points matched any lake bounds. Check your lake DB or file coords.', false); return; }
-  
-  // Log per-lake counts to help diagnose misassignment
-  console.log(`Point distribution across lakes:`);
-  matchedLakes.forEach(l => console.log(`  ${l}: ${buckets[l].length} pts`));
-  console.log(`Unmatched (no lake): ${unmatched}`);
-
-  // If a single lake is selected, only process that one; otherwise process all matched lakes
-  const lakesToProcess = (selectedLake && LAKE_DB[selectedLake] && buckets[selectedLake])
-    ? [selectedLake]
-    : matchedLakes;
-
-  say(`Processing ${lakesToProcess.length} lake(s): ${lakesToProcess.map(l=>l.split(',')[0]).join(', ')}…`, true);
-  await new Promise(r=>setTimeout(r,30));
-
-  let totalContours = 0, totalCells = 0;
-  for(const lakeName of lakesToProcess){
-    const pts = buckets[lakeName];
-    if(!pts || pts.length < 10) continue;
-
-    const safeName = nameBase
-      ? nameBase + '_' + lakeName.split(',')[0].replace(/\s+/g,'_')
-      : lakeName.split(',')[0].replace(/\s+/g,'_') + '_sonar';
-
-    const gridGeo = buildDepthGrid(pts, gridSize, doSmooth, doFringe);
-    if(!gridGeo) continue;
-    totalCells += gridGeo.features.length;
-
-    if(DB && DB.db){ try{ await DB.put('sonar',{name:safeName, gridGeo, rawPoints:pts}); }catch(e){} }
-    addSonarLayer(safeName, gridGeo, pts);
-
-    if(makeContours && gridGeo.meta && gridGeo.meta.grid){
-      try{
-        const contourFC = contourGrid(gridGeo, contourInterval, contourMin, contourMax);
-        const contourName = safeName + '_contours_' + contourInterval + 'ft';
-        if(contourFC.features.length){
-          if(DB && DB.db){ try{ await DB.put('layers',{name:contourName, geo:contourFC, depthProp:'depth_ft'}); }catch(e){} }
-          addContourLayer(contourName, contourFC, 'depth_ft');
-          totalContours += contourFC.features.length;
-        }
-      }catch(e){ console.warn('contour error', lakeName, e); }
-    }
-    console.log(`${lakeName}: ${pts.length} pts → ${gridGeo.features.length} cells`);
-  }
-
-  renderSonarList();
-  renderLayerList();
-  say(`Done. ${lakesToProcess.length} lake(s) processed. ${totalCells} grid cells, ${totalContours} contour lines.`, true);
-}
-
-function addSonarLayer(name, gridGeo, rawPoints){
-  if(!MAP_OK||!gridGeo) return;
-  removeSonarLayer(name);
-  const showGrid = document.getElementById('sonarShowGrid') ? document.getElementById('sonarShowGrid').checked : false;
-  const layer=L.geoJSON(gridGeo,{
-    style:f=>{ 
-      const d=f.properties.depth; 
-      return {fillColor:depthColor(d), color: showGrid ? 'rgba(0,0,0,0.12)' : 'transparent', weight:0.5, fillOpacity: showGrid ? 0.58 : 0}; 
-    },
-    onEachFeature:(f,l)=>{ l.bindTooltip(`${Math.round(f.properties.depth)} ft`); }
-  }).addTo(MAP);
-  layer.setZIndex(3);
-  SONAR_LAYERS[name]={gridGeo, layer, visible:true, rawPoints};
-}
-
-function removeSonarLayer(name){
-  const Lyr=SONAR_LAYERS[name]; if(!Lyr) return;
-  if(Lyr.layer) MAP.removeLayer(Lyr.layer);
-  delete SONAR_LAYERS[name];
-}
-
-async function renderSonarList(){
-  const host=document.getElementById('sonarList');
-  const names=Object.keys(SONAR_LAYERS);
-  if(!names.length){ host.innerHTML='<p class="muted">No sonar logs imported yet.</p>'; return; }
-  let html='';
-  for(const n of names){
-    const Lyr=SONAR_LAYERS[n];
-    const count = Lyr.rawPoints ? Lyr.rawPoints.length : 0;
-    html+=`<div class="row" style="justify-content:space-between">
-      <div style="flex:1"><b>${esc(n)}</b> <span class="muted">(${count} pts)</span></div>
-      <button onclick="toggleSonar('${esc(n).replace(/'/g,"\\'")}')">${Lyr.visible?'Hide':'Show'}</button>
-      <button onclick="deleteSonar('${esc(n).replace(/'/g,"\\'")}')">Delete</button>
-    </div>`;
-  }
-  host.innerHTML=html;
-}
-
-window.toggleSonar=function(name){
-  const Lyr=SONAR_LAYERS[name]; if(!Lyr) return;
-  if(Lyr.visible){ MAP.removeLayer(Lyr.layer); Lyr.visible=false; }
-  else{ Lyr.layer.addTo(MAP); Lyr.visible=true; }
-  renderSonarList();
-};
-
-window.deleteSonar=async function(name){
-  if(!confirm(`Delete sonar layer "${name}"?`)) return;
-  removeSonarLayer(name);
-  if(DB && DB.db) { try { await DB.del('sonar',name); } catch(e){} }
-  renderSonarList();
-};
-
-async function clearAllSonar(){
-  Object.keys(SONAR_LAYERS).forEach(n => removeSonarLayer(n));
-  if(DB && DB.db){ try { const all=await DB.getAll('sonar'); for(const r of all) await DB.del('sonar',r.name); } catch(e){} }
-  renderSonarList();
-}
-
 /* ---------- Map init ---------- */
 function initMap(){
   if(typeof L==='undefined'){
@@ -2642,10 +1972,6 @@ function initMap(){
 
 function setBase(kind){
   if(!MAP) return;
-  if(kind === 'noaaMarine'){
-    setBanner('NOAA charts are coastal/Great Lakes only — inland lakes like Wateree may show blank.');
-    setTimeout(()=>setBanner(''), 4200);
-  }
   
   // Remove existing base and label overlays
   if(BASE) MAP.removeLayer(BASE);
@@ -2978,8 +2304,8 @@ document.getElementById('clearImgBtn')?.addEventListener('click',()=>{
   if(IMG_AFFINE){ IMG_AFFINE.remove(); IMG_AFFINE=null; }
   IMG_DATAURL=null; IMG_BOUNDS=null; IMG_NATSIZE=null; IMG_ROTATION=0; IMG_AFFINE_PTS=null;
   georefState=null; ACTIVE_CHART=-1;
-  document.getElementById('toolbarGeorefGroup').style.display='none';
-  document.getElementById('nudgeGroup').style.display='none';
+  document.getElementById('toolbarGeorefGroup')?.style document.getElementById('toolbarGeorefGroup').style.displaydocument.getElementById('toolbarGeorefGroup').style.display (document.getElementById('toolbarGeorefGroup') && (document.getElementById('toolbarGeorefGroup').style.display = 'none');
+  document.getElementById('nudgeGroup') && (document.getElementById('nudgeGroup').style.display = 'none');
   document.getElementById('imgInput').value='';
 });
 
@@ -3006,7 +2332,7 @@ document.getElementById('imgInput')?.addEventListener('change',e=>{
       IMG_ROTATION=0; IMG_AFFINE_PTS=null;
       if(IMG_AFFINE){ IMG_AFFINE.remove(); IMG_AFFINE=null; }
       ACTIVE_CHART=-1; // new image targets working overlay
-      document.getElementById('toolbarGeorefGroup').style.display='flex';
+      document.getElementById('toolbarGeorefGroup')?.style document.getElementById('toolbarGeorefGroup').style.displaydocument.getElementById('toolbarGeorefGroup').style.display (document.getElementById('toolbarGeorefGroup') && (document.getElementById('toolbarGeorefGroup').style.display = 'flex');
       placeProvisionalOverlay();
     }; 
     im.src=IMG_DATAURL;
@@ -3107,8 +2433,8 @@ function placeProvisionalOverlay(){
   }).addTo(MAP);
   IMG_OVERLAY.setZIndex(1);
   applyOverlayRotation(IMG_OVERLAY, IMG_ROTATION);
-  document.getElementById('toolbarGeorefGroup').style.display='flex';
-  document.getElementById('nudgeGroup').style.display='flex';
+  document.getElementById('toolbarGeorefGroup')?.style document.getElementById('toolbarGeorefGroup').style.displaydocument.getElementById('toolbarGeorefGroup').style.display (document.getElementById('toolbarGeorefGroup') && (document.getElementById('toolbarGeorefGroup').style.display = 'flex');
+  document.getElementById('nudgeGroup') && (document.getElementById('nudgeGroup').style.display = 'flex');
 }
 
 document.getElementById('imgOpacity')?.addEventListener('input',e=>{ 
@@ -3383,7 +2709,7 @@ function applyGeoref(p){
   IMG_OVERLAY.setZIndex(1);
   applyOverlayRotation(IMG_OVERLAY, IMG_ROTATION);
   MAP.fitBounds([[north,west],[south,east]],{padding:[20,20]});
-  document.getElementById('nudgeGroup').style.display='flex';
+  document.getElementById('nudgeGroup') && (document.getElementById('nudgeGroup').style.display = 'flex');
 }
 
 function applyAffineGeoref(p){
@@ -3398,7 +2724,7 @@ function applyAffineGeoref(p){
   IMG_AFFINE=createAffineImageOverlay(IMG_DATAURL, IMG_NATSIZE, IMG_AFFINE_PTS, document.getElementById('imgOpacity').value/100);
   IMG_BOUNDS=null; IMG_ROTATION=0;
   MAP.fitBounds(affinePtsBounds(IMG_AFFINE_PTS),{padding:[30,30]});
-  document.getElementById('nudgeGroup').style.display='flex';
+  document.getElementById('nudgeGroup') && (document.getElementById('nudgeGroup').style.display = 'flex');
   setBanner('3-point chart aligned — use nudge/scale/rotate if needed, then Commit');
   setTimeout(()=>setBanner(''), 3000);
 }
@@ -3453,8 +2779,8 @@ async function commitWorkingChart(){
   await persistCharts();
   // Reset working state so user can load another image
   IMG_DATAURL=null; IMG_BOUNDS=null; IMG_NATSIZE=null; IMG_ROTATION=0; IMG_AFFINE_PTS=null;
-  document.getElementById('toolbarGeorefGroup').style.display='none';
-  document.getElementById('nudgeGroup').style.display='none';
+  document.getElementById('toolbarGeorefGroup')?.style document.getElementById('toolbarGeorefGroup').style.displaydocument.getElementById('toolbarGeorefGroup').style.display (document.getElementById('toolbarGeorefGroup') && (document.getElementById('toolbarGeorefGroup').style.display = 'none');
+  document.getElementById('nudgeGroup') && (document.getElementById('nudgeGroup').style.display = 'none');
 }
 
 function removeChartLayerObj(c){
@@ -4595,7 +3921,7 @@ function renderSpread(){
       const f = e.target.dataset.f;
       if(SPREAD[i]){
         SPREAD[i][f] = e.target.value;
-        if(f === 'lure' || f === 'depth'){
+        if(f === 'lure' || f === 'depth' || f === 'trailerSize'){
           const spd = parseFloat(document.getElementById('planSpeed')?.value) || 2.4;
           SPREAD[i].lead = String(autoCalculateLead(SPREAD[i], spd));
           renderSpread();
@@ -6165,7 +5491,11 @@ document.getElementById('saveSpreadBtn')?.addEventListener('click', async ()=>{
   const name = prompt('Save spread as:', document.getElementById('planName').value+' Spread');
   if(!name) return;
   SAVED_SPREADS[name] = SPREAD.map(r=>Object.assign({},r));
-  if(DB&&DB.db) try { await DB.put('spreads',{name, rods:SAVED_SPREADS[name]}); } catch(e){ alert('Spread save failed: '+e); }
+  if(DB&&DB.db) try {
+    await DB.put('spreads',{name, rods:SAVED_SPREADS[name]});
+    setBanner(`✅ Spread "${name}" saved`);
+    setTimeout(()=>setBanner(''),2500);
+  } catch(e){ alert('Spread save failed: '+e); }
   refreshSpreadsSelect();
   document.getElementById('savedSpreadsSelect').value = name;
 });
@@ -6482,35 +5812,16 @@ document.querySelectorAll('#bottomNav button').forEach(btn=>{
     document.getElementById('panel-'+tab).classList.add('active');
     if(tab==='map' && MAP){ setTimeout(()=>MAP.invalidateSize(),50); fitMap(); }
     if(tab==='edit') renderEditTables();
-    if(tab==='plan') renderPlanStats();
+    if(tab==='plan'){
+      renderPlanStats();
+      // Auto-run worker data blocks every time plan tab opens
+      if(typeof syncUtilityData === 'function') setTimeout(syncUtilityData, 400);
+      else if(typeof window.syncPlanRiverData === 'function') setTimeout(window.syncPlanRiverData, 400);
+    }
   });
 });
 
-/* ---------- UI Event Listeners for Sonar Drop ---------- */
-const sonarDropUI=document.getElementById('sonarDrop');
-const sonarFileUI=document.getElementById('sonarFile');
-if(sonarDropUI){
-sonarDropUI.addEventListener('click',()=>sonarFileUI.click());
-['dragenter','dragover'].forEach(evt=>{ 
-  sonarDropUI.addEventListener(evt,e=>{e.preventDefault();e.stopPropagation();sonarDropUI.classList.add('ok');}); 
-});
-['dragleave','drop'].forEach(evt=>{ 
-  sonarDropUI.addEventListener(evt,e=>{e.preventDefault();e.stopPropagation();sonarDropUI.classList.remove('ok');}); 
-});
-sonarDropUI.addEventListener('drop',e=>{ 
-  e.preventDefault();
-  e.stopPropagation();
-  sonarDropUI.classList.remove('ok');
-  handleSonarFiles(e.dataTransfer.files); 
-});
-sonarFileUI.addEventListener('change',e=>{ handleSonarFiles(e.target.files); });
-document.getElementById('clearAllSonarBtn')?.addEventListener('click', clearAllSonar);
 document.getElementById('clearAllLayersBtn')?.addEventListener('click', clearAllLayers);
-document.getElementById('importSonarBtn')?.addEventListener('click', ()=>{
-  if(sonarFileUI.files.length) handleSonarFiles(sonarFileUI.files);
-  else alert('Choose files first, or drag them onto the drop box.');
-});
-}
 
 /* ═══════════════════════════════════════════════════════════
    MODULE B — 📏 Distance & Bearing Measurement Tool
@@ -6979,7 +6290,6 @@ async function fetchDukeDirect(){
   let marker = null;
 
   
-  document.getElementById('topSearchBtn')?.addEventListener('click', ()=>{ modal.classList.add('open'); document.getElementById('searchInput').focus(); });
   document.getElementById('mapSearchBtn')?.addEventListener('click', ()=>{ modal.classList.add('open'); document.getElementById('searchInput').focus(); });
   document.getElementById('searchClose')?.addEventListener('click', ()=>modal.classList.remove('open'));
   modal.addEventListener('click', e=>{ if(e.target===modal) modal.classList.remove('open'); });
@@ -7040,17 +6350,26 @@ async function fetchDukeDirect(){
 
 /* ---------- Init ---------- */
 initMap();
-setTimeout(() => {
-  if (DB && DB.db) {
-    DB.getAll('sonar').then(all=>{ for(const rec of all) addSonarLayer(rec.name, rec.gridGeo, rec.rawPoints); renderSonarList(); }).catch(()=>{});
-    loadAllLayers();
-    restoreCharts();
-    restoreWorkingData();
-    loadSavedSpreads();
-    loadCatches();
-    populatePlanLakeDropdown();
-  }
-}, 600);
+DB.open().then(() => {
+  loadAllLayers();
+  restoreCharts();
+  restoreWorkingData();
+  loadSavedSpreads();
+  loadCatches();
+  populatePlanLakeDropdown();
+}).catch(e => {
+  console.warn('IndexedDB open failed, retrying once…', e);
+  setTimeout(() => {
+    if (DB && DB.db) {
+      loadAllLayers();
+      restoreCharts();
+      restoreWorkingData();
+      loadSavedSpreads();
+      loadCatches();
+      populatePlanLakeDropdown();
+    }
+  }, 1200);
+});
 
 // Auto-set date
 const d=new Date(); document.getElementById('planDate').value=d.toISOString().slice(0,10);
