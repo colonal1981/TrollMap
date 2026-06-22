@@ -474,6 +474,7 @@
             <option value="delete">Del</option>
           </select>
           <button id="fitBtn" class="small" title="Fit map to tracking routes">⤢ Fit</button>
+          <span id="zoomIndicator" class="small" title="Current map zoom — this is the zoom the i-Boating contour capture will use" style="background:var(--panel2);color:var(--accent);font-weight:700;padding:4px 8px;border-radius:4px;font-family:monospace;font-size:12px;min-width:54px;text-align:center">z —</span>
         </div>
 
         <!-- Working Georef Console (Unhidden when chart image loaded) -->
@@ -719,8 +720,8 @@
         <div class="row" style="gap:8px;margin-bottom:10px">
           <button id="bulkPrefixBtn">🔤 Bulk rename</button>
           <button id="dedupeBtn">🧹 De-dupe</button>
-          <button id="connectSelBtn" class="primary">🔗 Connect selected → Track</button>
-          <button id="curveSelBtn" class="primary">〰️ Selected → S-Curve Track</button>
+          <button id="selectAllWptBtn">☑ Select all waypoints</button>
+          <button id="deselectAllWptBtn">☐ Deselect all</button>
           <button id="delSelBtn">🗑️ Delete selected</button>
           <button id="recoverBtn">🔄 Recover centerline</button>
         </div>
@@ -2555,6 +2556,17 @@ function initMap(){
   // Leaflet rewrites raster image CSS transforms during zoom/pan. Re-apply chart
   // rotation after map movement so committed chart overlays do not visually drift.
   MAP.on('zoom zoomend moveend viewreset resize', refreshChartOverlayTransforms);
+
+  // Live zoom indicator (toolbar pill next to Fit button).
+  const zoomIndicator = document.getElementById('zoomIndicator');
+  const updateZoomIndicator = () => {
+    if (!zoomIndicator) return;
+    const z = MAP.getZoom();
+    zoomIndicator.textContent = `z ${z.toFixed(1)}`;
+    zoomIndicator.title = `Map zoom ${z.toFixed(2)} — i-Boating contour capture will use this zoom`;
+  };
+  MAP.on('zoom zoomend', updateZoomIndicator);
+  updateZoomIndicator();
 }
 
 function setBase(kind){
@@ -4225,6 +4237,19 @@ document.getElementById('delSelBtn')?.addEventListener('click',()=>{
   if(!sel.length){ alert('No waypoints checked'); return; }
   sel.forEach(i=>DATA.waypoints.splice(i,1));
   renderAll();
+});
+
+// Select-all / deselect-all waypoints (Edit tab). Works after renderEditTables().
+function _setAllEditCheckboxes(checked){
+  document.querySelectorAll('#editTables [data-sel]').forEach(c => {
+    if (c.type === 'checkbox') c.checked = checked;
+  });
+}
+document.getElementById('selectAllWptBtn')?.addEventListener('click',()=>{
+  _setAllEditCheckboxes(true);
+});
+document.getElementById('deselectAllWptBtn')?.addEventListener('click',()=>{
+  _setAllEditCheckboxes(false);
 });
 
 document.getElementById('bulkPrefixBtn')?.addEventListener('click',()=>{
